@@ -26,7 +26,7 @@ struct AISheet: View {
     }
 
     private let suggestions = ["Nachtmodus", "Kino 24", "Slow Motion", "Action", "Vlog Selfie", "Produkt",
-                               "Golden Hour", "Porträt-Foto", "Etwas wärmer", "Heller", "60 fps",
+                               "Golden Hour", "Porträt-Foto", "Etwas wärmer", "Heller", "60 fps", "Quer für YouTube", "Instagram 4:5",
                                "Wie mein Referenzvideo"]
 
     private var hasKey: Bool { !ClaudeService.apiKey.isEmpty }
@@ -163,6 +163,7 @@ struct AISheet: View {
         let rows: [(String, String, String)] = [
             ("Kamera", current.lens.focal, p.lens.focal),
             ("Modus", current.isPhoto ? "Foto" : "Video", p.isPhoto ? "Foto" : "Video"),
+            ("Format", current.aspectLabel, p.aspectLabel),
             ("Auflösung", current.resolutionText, p.resolutionText),
             ("FPS", current.fpsText, p.fpsText),
             ("Verschluss", current.shutterText, p.shutterText),

@@ -13,8 +13,8 @@ targets:
       path: KIKamera/Info.plist
       properties:
         CFBundleDisplayName: KI Kamera
-        CFBundleShortVersionString: "2.0"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "2.1"
+        CFBundleVersion: "3"
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UIStatusBarHidden: true

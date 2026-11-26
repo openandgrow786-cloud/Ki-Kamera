@@ -5,9 +5,22 @@ enum SheetKind: String, Identifiable {
     var id: String { rawValue }
 }
 
+extension View {
+    /// Knöpfe beim Filmen weich ausblenden.
+    func recFade(_ hidden: Bool, mode: String, dy: CGFloat) -> some View {
+        self
+            .opacity(hidden ? (mode == "hidden" ? 0 : 0.18) : 1)
+            .offset(y: hidden ? dy : 0)
+            .scaleEffect(hidden ? 0.97 : 1)
+            .allowsHitTesting(!hidden)
+            .animation(.spring(response: 0.7, dampingFraction: 0.85), value: hidden)
+    }
+}
+
 struct CameraScreen: View {
     @StateObject private var cam = CameraManager()
     @EnvironmentObject private var library: LookLibrary
+    @AppStorage("recFade") private var recFade = "transparent"
     @Namespace private var ns
 
     @State private var activeParam: CameraParam?
@@ -17,25 +30,93 @@ struct CameraScreen: View {
     @State private var scanTrigger = 0
     @State private var countdown: Int?
     @State private var recPulse = false
+    @State private var revealed = false
+    @State private var showRevealHint = false
+
+    private var uiHidden: Bool { cam.isRecording && !revealed && recFade != "off" }
+    private var iconAngle: Angle { .degrees(cam.uiRotation) }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Theme.bg.ignoresSafeArea()
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-            VStack(spacing: 10) {
-                topBar
-                paramStrip
-                viewfinder
-                lensRow
-                modeSwitch
+            viewfinder.ignoresSafeArea()
+
+            if uiHidden {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { reveal() }
+            }
+
+            VStack(spacing: 8) {
+                VStack(spacing: 8) {
+                    topBar
+                    paramStrip
+                    chipsRow
+                }
+                .recFade(uiHidden, mode: recFade, dy: -12)
+
+                Spacer(minLength: 0)
+
+                HStack(alignment: .bottom) {
+                    messages
+                    Spacer()
+                    if !cam.preset.isPhoto {
+                        AudioMeter(levels: cam.audioLevels, peaks: cam.audioPeaks)
+                            .opacity(uiHidden ? 0.55 : 1)
+                            .animation(.easeInOut(duration: 0.6), value: uiHidden)
+                    }
+                }
+                .padding(.horizontal, 12)
+
+                VStack(spacing: 10) {
+                    aspectPicker
+                    lensRow
+                }
+                .recFade(uiHidden, mode: recFade, dy: 12)
+
                 bottomBar
             }
 
-            if let param = activeParam {
-                ParamPanel(param: param, cam: cam) {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { activeParam = nil }
+            if cam.isRecording {
+                VStack {
+                    HStack(spacing: 7) {
+                        Circle().fill(Color.white).frame(width: 7, height: 7).opacity(recPulse ? 1 : 0.3)
+                        Text(timecode).font(Theme.mono(13, .heavy)).monospacedDigit()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Theme.rec.opacity(0.92), in: RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: Theme.rec.opacity(0.5), radius: 14)
+                    .rotationEffect(iconAngle)
+                    .padding(.top, 6)
+                    Spacer()
                 }
-                .padding(.bottom, 128)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .allowsHitTesting(false)
+                .onAppear { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { recPulse = true } }
+                .onDisappear { recPulse = false }
+            }
+
+            if showRevealHint {
+                Text("Tippe aufs Bild, um die Knöpfe kurz zu zeigen")
+                    .font(Theme.ui(13, .semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .glass(14)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .allowsHitTesting(false)
+            }
+
+            if let param = activeParam, !uiHidden {
+                VStack {
+                    Spacer()
+                    ParamPanel(param: param, cam: cam) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { activeParam = nil }
+                    }
+                    .padding(.bottom, 214)
+                }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(2)
             }
@@ -45,17 +126,48 @@ struct CameraScreen: View {
                     .font(.system(size: 150, weight: .thin, design: .rounded))
                     .foregroundStyle(Theme.goldGradient)
                     .shadow(color: Theme.gold.opacity(0.6), radius: 30)
+                    .rotationEffect(iconAngle)
                     .id(n)
                     .transition(.scale(scale: 1.6).combined(with: .opacity))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
                     .zIndex(3)
             }
+
+            if cam.processing {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) {
+                        ProgressView().tint(Theme.gold)
+                        Text("Format wird zugeschnitten …").font(Theme.ui(13, .semibold))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .glass(14)
+                    .padding(.bottom, 230)
+                }
+                .transition(.opacity)
+            }
         }
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: cam.isRecording)
+        .animation(.easeInOut(duration: 0.3), value: showRevealHint)
+        .animation(.easeInOut(duration: 0.3), value: cam.processing)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: cam.uiRotation)
         .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
         .onAppear { cam.start() }
+        .onChange(of: cam.isRecording) { _, recording in
+            revealed = false
+            if recording && recFade != "off" {
+                activeParam = nil
+                showRevealHint = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { showRevealHint = false }
+            } else {
+                showRevealHint = false
+            }
+        }
         .sensoryFeedback(.impact(weight: .medium), trigger: cam.isRecording)
         .sensoryFeedback(.selection, trigger: cam.preset.name)
+        .sensoryFeedback(.selection, trigger: cam.preset.aspect)
         .sheet(item: $sheet) { kind in
             switch kind {
             case .ai:
@@ -73,6 +185,12 @@ struct CameraScreen: View {
         }
     }
 
+    private func reveal() {
+        showRevealHint = false
+        revealed = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { revealed = false }
+    }
+
     private func applyLook(_ preset: Preset) {
         sheet = nil
         cam.apply(preset)
@@ -84,7 +202,37 @@ struct CameraScreen: View {
         }
     }
 
-    // MARK: Kopfzeile
+    // MARK: Sucher (Vollbild)
+
+    private var viewfinder: some View {
+        ZStack {
+            if cam.cameraDenied {
+                Text("Kein Kamerazugriff. Erlaube ihn in den iPhone-Einstellungen unter KI Kamera.")
+                    .font(Theme.ui(15))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Theme.muted)
+                    .padding(30)
+            } else {
+                CameraPreview(cam: cam, version: cam.configVersion)
+            }
+            if cam.preset.grid { GridOverlay() }
+            FrameMask(aspect: cam.preset.aspectValue, landscape: cam.isLandscape)
+            if let pt = cam.focusPoint {
+                FocusBox(point: pt).id("\(pt.x)-\(pt.y)")
+            }
+            ScanSweep(trigger: scanTrigger)
+            if cam.photoFlash {
+                Color.white.opacity(0.85).allowsHitTesting(false)
+            }
+            if cam.isRecording {
+                RoundedRectangle(cornerRadius: 0)
+                    .strokeBorder(Theme.rec.opacity(0.7), lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    // MARK: Oben
 
     private var timecode: String {
         String(format: "%02d:%02d:%02d:00", cam.seconds / 3600, (cam.seconds / 60) % 60, cam.seconds % 60)
@@ -97,34 +245,30 @@ struct CameraScreen: View {
                     .font(Theme.mono(12, .heavy))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                Text(cam.preset.isPhoto ? "HEIF" : "16:9")
+                Text(cam.preset.aspectLabel)
                     .font(Theme.mono(8, .bold))
                     .foregroundStyle(Theme.bg)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 2)
                     .background(Theme.goldGradient)
+                    .contentTransition(.numericText())
             }
             .fixedSize()
+            .background(Color.black.opacity(0.35))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.gold, lineWidth: 1))
+            .rotationEffect(iconAngle)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    if cam.isRecording {
-                        Circle().fill(Theme.rec).frame(width: 8, height: 8)
-                            .opacity(recPulse ? 1 : 0.25)
-                            .onAppear { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { recPulse = true } }
-                            .onDisappear { recPulse = false }
-                    }
-                    Text(timecode)
-                        .font(Theme.mono(24, .bold))
-                        .foregroundStyle(cam.isRecording ? Theme.rec : Theme.text)
-                        .contentTransition(.numericText())
-                        .animation(.snappy, value: cam.seconds)
-                }
+                Text(timecode)
+                    .font(Theme.mono(22, .bold))
+                    .foregroundStyle(cam.isRecording ? Theme.rec : Theme.text)
+                    .shadow(color: .black.opacity(0.6), radius: 6)
+                    .contentTransition(.numericText())
+                    .animation(.snappy, value: cam.seconds)
                 Text("\(cam.preset.codec.uppercased()) · \(cam.preset.hdr ? "HLG HDR" : "SDR") · \(cam.preset.stabilization == "cinematic" ? "STAB+" : "STAB")")
                     .font(Theme.mono(9, .semibold))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.text.opacity(0.7))
             }
 
             Spacer(minLength: 0)
@@ -135,14 +279,15 @@ struct CameraScreen: View {
                     Text("\(Int(cam.battery * 100))%").font(Theme.mono(10, .bold))
                 }
                 .foregroundStyle(cam.battery < 0.2 ? Theme.rec : Theme.text)
-                Text(String(format: "%.0f GB", cam.freeGB)).font(Theme.mono(10, .bold)).foregroundStyle(Theme.muted)
+                Text(String(format: "%.0f GB", cam.freeGB)).font(Theme.mono(10, .bold)).foregroundStyle(Theme.text.opacity(0.7))
             }
 
             Button { sheet = .settings } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 17))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.text.opacity(0.8))
                     .frame(width: 40, height: 40)
+                    .rotationEffect(iconAngle)
             }
             .accessibilityLabel("Einstellungen")
         }
@@ -159,8 +304,6 @@ struct CameraScreen: View {
         default: return "battery.100percent"
         }
     }
-
-    // MARK: Werte-Leiste
 
     private func value(for param: CameraParam) -> (String, Bool) {
         let p = cam.preset
@@ -186,7 +329,7 @@ struct CameraScreen: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 3) {
-                            Text(param.label).font(Theme.mono(9, .bold)).foregroundStyle(Theme.muted)
+                            Text(param.label).font(Theme.mono(9, .bold)).foregroundStyle(Theme.text.opacity(0.7))
                             if v.1 {
                                 Text("A").font(Theme.mono(8, .heavy)).foregroundStyle(Theme.bg)
                                     .padding(.horizontal, 3)
@@ -207,7 +350,7 @@ struct CameraScreen: View {
                     .background {
                         if selected {
                             RoundedRectangle(cornerRadius: 10)
-                                .fill(Theme.gold.opacity(0.12))
+                                .fill(Theme.gold.opacity(0.16))
                                 .matchedGeometryEffect(id: "paramSel", in: ns)
                         }
                     }
@@ -220,105 +363,76 @@ struct CameraScreen: View {
         .padding(.horizontal, 10)
     }
 
-    // MARK: Sucher
-
-    private var viewfinder: some View {
-        ZStack {
-            if cam.cameraDenied {
-                Text("Kein Kamerazugriff. Erlaube ihn in den iPhone-Einstellungen unter KI Kamera.")
-                    .font(Theme.ui(15))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Theme.muted)
-                    .padding(30)
-            } else {
-                CameraPreview(cam: cam, version: cam.configVersion)
-            }
-
-            if cam.preset.grid { GridOverlay() }
-
-            if let pt = cam.focusPoint {
-                FocusBox(point: pt).id("\(pt.x)-\(pt.y)")
-            }
-
-            ScanSweep(trigger: scanTrigger)
-
-            VStack {
-                HStack(alignment: .top) {
-                    lookChip
-                    Spacer()
-                    Text(String(format: "%.1f×", cam.liveZoom))
-                        .font(Theme.mono(12, .bold))
-                        .foregroundStyle(Theme.text)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .glass(12)
-                        .contentTransition(.numericText())
+    private var chipsRow: some View {
+        HStack(alignment: .top) {
+            Button { sheet = .looks } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").foregroundStyle(Theme.aiGradient)
+                    Text(cam.preset.name).lineLimit(1)
                 }
-                Spacer()
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if cam.isRecording {
-                            HStack(spacing: 6) {
-                                Circle().fill(Color.white).frame(width: 7, height: 7)
-                                Text("REC").font(Theme.mono(12, .heavy))
+                .font(Theme.ui(12, .semibold))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .glass(14, glow: highlight ? Theme.cyan : nil)
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Text(String(format: "%.1f×", cam.liveZoom))
+                .font(Theme.mono(12, .bold))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .glass(12)
+                .contentTransition(.numericText())
+                .rotationEffect(iconAngle)
+        }
+        .padding(.horizontal, 12)
+    }
+
+    private var messages: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let msg = cam.message, !uiHidden {
+                Text(msg)
+                    .font(Theme.ui(13, .semibold))
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .glass(12, glow: Theme.cyan)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cam.message)
+    }
+
+    // MARK: Unten
+
+    private var aspectPicker: some View {
+        HStack(spacing: 2) {
+            ForEach(Preset.aspects, id: \.self) { a in
+                let on = cam.preset.aspect == a
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { cam.update { $0.aspect = a } }
+                } label: {
+                    Text(a == "2.39" ? "2,39" : a)
+                        .font(Theme.mono(11, .heavy))
+                        .foregroundStyle(on ? Color.black : Theme.text)
+                        .frame(minWidth: 50, minHeight: 34)
+                        .background {
+                            if on {
+                                Capsule().fill(Theme.goldGradient)
+                                    .matchedGeometryEffect(id: "aspect", in: ns)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Theme.rec, in: RoundedRectangle(cornerRadius: 6))
-                            .transition(.scale.combined(with: .opacity))
                         }
-                        if let msg = cam.message {
-                            Text(msg)
-                                .font(Theme.ui(13, .semibold))
-                                .foregroundStyle(Theme.text)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 9)
-                                .glass(12, glow: Theme.cyan)
-                                .transition(.move(edge: .leading).combined(with: .opacity))
-                        }
-                    }
-                    Spacer()
-                    if !cam.preset.isPhoto {
-                        AudioMeter(levels: cam.audioLevels, peaks: cam.audioPeaks)
-                    }
                 }
-            }
-            .padding(12)
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cam.message)
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cam.isRecording)
-
-            if cam.photoFlash {
-                Color.white.opacity(0.85).allowsHitTesting(false)
+                .buttonStyle(.plain)
+                .disabled(cam.isRecording)
+                .accessibilityLabel("Bildformat \(a)")
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(cam.isRecording ? AnyShapeStyle(Theme.rec) : AnyShapeStyle(Theme.hairline),
-                              lineWidth: cam.isRecording ? 2 : 1)
-        )
-        .shadow(color: cam.isRecording ? Theme.rec.opacity(0.35) : .clear, radius: 18)
-        .padding(.horizontal, 10)
+        .padding(3)
+        .glass(19)
     }
-
-    private var lookChip: some View {
-        Button { sheet = .looks } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles").foregroundStyle(Theme.aiGradient)
-                Text(cam.preset.name).lineLimit(1)
-            }
-            .font(Theme.ui(12, .semibold))
-            .foregroundStyle(Theme.text)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .glass(14, glow: highlight ? Theme.cyan : nil)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: Objektive, Modus, Knöpfe
 
     private var lensRow: some View {
         HStack(spacing: 4) {
@@ -329,8 +443,9 @@ struct CameraScreen: View {
                 } label: {
                     Text(lens.label)
                         .font(Theme.mono(12, .bold))
-                        .foregroundStyle(on ? Color.black : Theme.text.opacity(0.85))
-                        .frame(width: 58, height: 40)
+                        .foregroundStyle(on ? Color.black : Theme.text.opacity(0.9))
+                        .rotationEffect(iconAngle)
+                        .frame(width: 56, height: 40)
                         .background {
                             if on {
                                 Capsule().fill(Theme.goldGradient)
@@ -348,57 +463,47 @@ struct CameraScreen: View {
         .glass(24)
     }
 
-    private var modeSwitch: some View {
-        HStack(spacing: 28) {
-            ForEach(["video", "photo"], id: \.self) { mode in
-                let on = cam.preset.mode == mode
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        cam.update { $0.mode = mode }
-                    }
-                } label: {
-                    VStack(spacing: 5) {
-                        Text(mode == "video" ? "VIDEO" : "FOTO")
-                            .font(Theme.mono(12, .heavy))
-                            .tracking(2)
-                            .foregroundStyle(on ? AnyShapeStyle(Theme.goldGradient) : AnyShapeStyle(Theme.muted))
-                        ZStack {
-                            if on {
-                                Capsule().fill(Theme.goldGradient).frame(width: 18, height: 3)
-                                    .matchedGeometryEffect(id: "mode", in: ns)
-                            }
-                        }
-                        .frame(height: 3)
-                    }
-                    .frame(minWidth: 60, minHeight: 32)
-                }
-                .buttonStyle(.plain)
-                .disabled(cam.isRecording)
-            }
-        }
-    }
-
     private var bottomBar: some View {
         HStack {
-            sideButton(icon: "square.stack.3d.up", label: "Looks") { sheet = .looks }
-            Spacer()
-            Button { sheet = .ai } label: {
-                VStack(spacing: 3) {
-                    AIOrb(size: 50)
-                    Text("KI").font(Theme.mono(10, .heavy)).foregroundStyle(Theme.cyan)
+            HStack(spacing: 14) {
+                sideButton(icon: "square.stack.3d.up", label: "Looks") { sheet = .looks }
+                Button { sheet = .ai } label: {
+                    VStack(spacing: 3) {
+                        AIOrb(size: 50)
+                        Text("KI").font(Theme.mono(10, .heavy)).foregroundStyle(Theme.cyan)
+                    }
+                    .rotationEffect(iconAngle)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("KI fragen")
             }
-            .buttonStyle(.plain)
-            .disabled(cam.isRecording)
-            .accessibilityLabel("KI fragen")
+            .recFade(uiHidden, mode: recFade, dy: 12)
+
             Spacer()
             recordButton
             Spacer()
-            sideButton(icon: "wand.and.stars", label: "Studio") { showEditor = true }
-            Spacer()
-            sideButton(icon: "photo.on.rectangle", label: "Clips") {
-                if let url = URL(string: "photos-redirect://") { UIApplication.shared.open(url) }
+
+            HStack(spacing: 14) {
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        cam.update { $0.mode = $0.isPhoto ? "video" : "photo" }
+                    }
+                } label: {
+                    VStack(spacing: 4) {
+                        Text(cam.preset.isPhoto ? "FOTO" : "VIDEO")
+                            .font(Theme.mono(10, .heavy))
+                            .foregroundStyle(Theme.goldGradient)
+                            .rotationEffect(iconAngle)
+                            .frame(width: 48, height: 48)
+                            .glass(16)
+                        Text("Modus").font(Theme.mono(9, .bold)).foregroundStyle(Theme.text.opacity(0.7))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Video oder Foto")
+                sideButton(icon: "wand.and.stars", label: "Studio") { showEditor = true }
             }
+            .recFade(uiHidden, mode: recFade, dy: 12)
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 8)
@@ -409,14 +514,14 @@ struct CameraScreen: View {
             VStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .medium))
+                    .rotationEffect(iconAngle)
                     .frame(width: 48, height: 48)
                     .glass(16)
-                Text(label).font(Theme.mono(9, .bold)).foregroundStyle(Theme.muted)
+                Text(label).font(Theme.mono(9, .bold)).foregroundStyle(Theme.text.opacity(0.7))
             }
             .foregroundStyle(Theme.text)
         }
         .buttonStyle(.plain)
-        .disabled(cam.isRecording)
     }
 
     private var recordButton: some View {

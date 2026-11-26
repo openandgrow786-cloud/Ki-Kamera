@@ -101,6 +101,7 @@ enum ClaudeService {
 
     Antworte NUR mit einem JSON-Objekt, ohne Text davor oder danach:
     {"name": "kurzer Name des Looks", "lens": "front|ultra|wide|wide2x|tele", "mode": "video|photo", \
+    "aspect": "9:16|16:9|1:1|4:5|3:4|2.39", \
     "resolution": "4K|1080p", "fps": Zahl, "shutter": Nenner der Verschlusszeit (96 heißt 1/96), \
     "iso": null oder Zahl, "whiteBalance": null oder Kelvin, "tint": Zahl -50 bis 50, \
     "exposureBias": EV -2 bis 2, "zoom": null oder Zoomfaktor des Objektivs, "hdr": true|false, \
@@ -110,6 +111,8 @@ enum ClaudeService {
     Regeln:
     - Objektive: front = Selfie-Kamera, ultra = 13 mm, wide = 24 mm Hauptkamera, wide2x = 48 mm, tele = 120 mm.
     - Person hält das Handy selbst und schaut in die Kamera: front.
+    - aspect = Bildformat des fertigen Videos: 9:16 hochkant (TikTok, Reels, Shorts), 16:9 quer (YouTube), \
+    1:1 quadratisch, 4:5 (Instagram-Feed), 3:4, 2.39 (Kino-Breitbild). Beim Referenzvideo das Format übernehmen.
     - fps: 24 (Kino), 25, 30, 48, 50, 60, 100 oder 120 (Zeitlupe). Frontkamera in 4K höchstens 60.
     - Verschluss nach der 180-Grad-Regel: shutter = 2 mal fps. Sport und Action: 250 bis 1000. Nachts darf shutter so klein wie fps sein.
     - iso fast immer null (Automatik). Nur eine Zahl, wenn der Look es klar verlangt.

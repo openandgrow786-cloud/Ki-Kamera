@@ -33,6 +33,7 @@ struct Preset: Codable, Equatable {
     var name: String
     var lens: Lens
     var mode: String            // "video" oder "photo"
+    var aspect: String          // "9:16", "16:9", "1:1", "4:5", "3:4", "2.39"
     var resolution: String      // "4K" oder "1080p"
     var fps: Double
     var shutter: Double         // Nenner: 96 bedeutet 1/96 s
@@ -49,7 +50,7 @@ struct Preset: Codable, Equatable {
     var maxDuration: Int        // 0 = unbegrenzt
     var note: String?
 
-    init(name: String, lens: Lens = .wide, mode: String = "video", resolution: String = "4K",
+    init(name: String, lens: Lens = .wide, mode: String = "video", aspect: String = "9:16", resolution: String = "4K",
          fps: Double = 30, shutter: Double = 60, iso: Double? = nil, whiteBalance: Double? = nil,
          tint: Double = 0, exposureBias: Double = 0, zoom: Double? = nil, hdr: Bool = true,
          codec: String = "hevc", stabilization: String = "auto", grid: Bool = true,
@@ -57,6 +58,7 @@ struct Preset: Codable, Equatable {
         self.name = name
         self.lens = lens
         self.mode = mode
+        self.aspect = aspect
         self.resolution = resolution
         self.fps = fps
         self.shutter = shutter
@@ -75,7 +77,7 @@ struct Preset: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, lens, mode, resolution, fps, shutter, iso, whiteBalance, tint, exposureBias, zoom
+        case name, lens, mode, aspect, resolution, fps, shutter, iso, whiteBalance, tint, exposureBias, zoom
         case hdr, codec, stabilization, grid, countdown, maxDuration, note
     }
 
@@ -85,6 +87,8 @@ struct Preset: Codable, Equatable {
         name = (try? c.decode(String.self, forKey: .name)) ?? "KI-Look"
         lens = Lens(rawValue: ((try? c.decode(String.self, forKey: .lens)) ?? "wide").lowercased()) ?? .wide
         mode = ((try? c.decode(String.self, forKey: .mode)) ?? "video").lowercased() == "photo" ? "photo" : "video"
+        let a = ((try? c.decode(String.self, forKey: .aspect)) ?? "9:16").replacingOccurrences(of: ",", with: ".")
+        aspect = Preset.aspects.contains(a) ? a : (a.hasPrefix("2.") ? "2.39" : "9:16")
         resolution = (try? c.decode(String.self, forKey: .resolution)) ?? "4K"
         fps = (try? c.decode(Double.self, forKey: .fps)) ?? 30
         shutter = (try? c.decode(Double.self, forKey: .shutter)) ?? fps * 2
@@ -102,7 +106,21 @@ struct Preset: Codable, Equatable {
         note = (try? c.decodeIfPresent(String.self, forKey: .note)) ?? nil
     }
 
+    static let aspects = ["9:16", "16:9", "1:1", "4:5", "3:4", "2.39"]
+
     var isPhoto: Bool { mode == "photo" }
+    /// Breite geteilt durch Höhe des fertigen Bildes.
+    var aspectValue: Double {
+        switch aspect {
+        case "16:9": return 16.0 / 9.0
+        case "1:1": return 1
+        case "4:5": return 0.8
+        case "3:4": return 0.75
+        case "2.39": return 2.39
+        default: return 9.0 / 16.0
+        }
+    }
+    var aspectLabel: String { aspect == "2.39" ? "2,39" : aspect }
     var fpsText: String {
         abs(fps - fps.rounded()) < 0.001 ? String(Int(fps.rounded())) : String(format: "%.2f", fps)
     }
@@ -114,7 +132,7 @@ struct Preset: Codable, Equatable {
     var resolutionText: String { resolution.lowercased().contains("1080") ? "1080p" : "4K" }
     var effectiveZoom: Double { zoom ?? lens.defaultZoom }
     var summary: String {
-        "\(lens.focal) · \(isPhoto ? "Foto" : "\(resolutionText) \(fpsText)p") · \(shutterText) · \(wbText)"
+        "\(lens.focal) · \(aspectLabel) · \(isPhoto ? "Foto" : "\(resolutionText) \(fpsText)p") · \(shutterText) · \(wbText)"
     }
 
     /// Ob für den Wechsel von `old` zu diesem Look die Kamera komplett neu aufgebaut werden muss.
@@ -132,7 +150,7 @@ extension Preset {
                                      whiteBalance: 4460, tint: 9,
                                      note: "Aus deinem Clip: Frontkamera, 48 fps, 1/96, 4460K, Tint 9.")
 
-    static let kino = Preset(name: "Kino 24", fps: 24, shutter: 48, whiteBalance: 5000, stabilization: "cinematic",
+    static let kino = Preset(name: "Kino 24", aspect: "2.39", fps: 24, shutter: 48, whiteBalance: 5000, stabilization: "cinematic",
                              note: "Klassischer Film-Look mit natürlicher Bewegungsunschärfe.")
 
     static let nacht = Preset(name: "Nachtmodus", fps: 24, shutter: 30, whiteBalance: 4000, exposureBias: 0.3,
@@ -142,19 +160,19 @@ extension Preset {
     static let slowMo = Preset(name: "Slow Motion", fps: 120, shutter: 240,
                                note: "120 fps, später auf Zeitlupe verlangsamen.")
 
-    static let sport = Preset(name: "Action", fps: 60, shutter: 500, stabilization: "cinematic",
+    static let sport = Preset(name: "Action", aspect: "16:9", fps: 60, shutter: 500, stabilization: "cinematic",
                               note: "Kurzer Verschluss für gestochen scharfe Bewegung.")
 
     static let vlog = Preset(name: "Vlog Selfie", lens: .front, fps: 30, shutter: 60,
                              note: "Frontkamera, natürliche Farben.")
 
-    static let produkt = Preset(name: "Produkt", lens: .wide2x, fps: 30, shutter: 60, whiteBalance: 5600,
+    static let produkt = Preset(name: "Produkt", lens: .wide2x, aspect: "4:5", fps: 30, shutter: 60, whiteBalance: 5600,
                                 note: "48 mm, neutrales Licht, wenig Verzerrung.")
 
     static let warm = Preset(name: "Golden Hour", lens: .wide2x, fps: 30, shutter: 60, whiteBalance: 4200, tint: 6,
                              note: "Warme, weiche Stimmung.")
 
-    static let portraitFoto = Preset(name: "Porträt-Foto", lens: .tele, mode: "photo", fps: 30, shutter: 125,
+    static let portraitFoto = Preset(name: "Porträt-Foto", lens: .tele, mode: "photo", aspect: "3:4", fps: 30, shutter: 125,
                                      note: "Tele, Fotomodus.")
 
     static let builtIn: [Preset] = [.standard, .referenzClip, .kino, .nacht, .slowMo, .sport, .vlog, .produkt, .warm, .portraitFoto]

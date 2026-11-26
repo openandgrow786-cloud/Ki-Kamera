@@ -38,6 +38,7 @@ struct CameraPreview: UIViewRepresentable {
         view.previewLayer.videoGravity = .resizeAspectFill
         view.backgroundColor = .black
         let cam = self.cam
+        cam.attach(previewLayer: view.previewLayer)
         view.onTap = { device, point in cam.focus(at: device, viewPoint: point) }
         view.onPinch = { state, scale in
             switch state {
@@ -162,5 +163,62 @@ struct ScanSweep: View {
             withAnimation(.easeInOut(duration: 1.0)) { progress = 1.2 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) { visible = false }
         }
+    }
+}
+
+/// Dunkelt alles außerhalb des gewählten Bildformats ab und zeigt den Rahmen. Animiert beim Wechsel.
+struct FrameMask: View {
+    let aspect: Double      // Breite / Höhe des fertigen Bildes
+    let landscape: Bool     // Handy wird quer gehalten
+
+    var body: some View {
+        GeometryReader { geo in
+            let rect = Self.cropRect(in: geo.size, aspect: aspect, landscape: landscape)
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(Color.black.opacity(0.62))
+                    .frame(width: geo.size.width, height: max(rect.minY, 0))
+                Rectangle().fill(Color.black.opacity(0.62))
+                    .frame(width: geo.size.width, height: max(geo.size.height - rect.maxY, 0))
+                    .offset(y: rect.maxY)
+                Rectangle().fill(Color.black.opacity(0.62))
+                    .frame(width: max(rect.minX, 0), height: rect.height)
+                    .offset(y: rect.minY)
+                Rectangle().fill(Color.black.opacity(0.62))
+                    .frame(width: max(geo.size.width - rect.maxX, 0), height: rect.height)
+                    .offset(x: rect.maxX, y: rect.minY)
+                Rectangle()
+                    .strokeBorder(Theme.gold.opacity(0.6), lineWidth: 1)
+                    .frame(width: rect.width, height: rect.height)
+                    .offset(x: rect.minX, y: rect.minY)
+            }
+            .animation(.spring(response: 0.5, dampingFraction: 0.72), value: rect)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// Bereich des fertigen Bildes im Vollbild-Sucher (Livebild ist 9:16 und füllt den Bildschirm).
+    static func cropRect(in size: CGSize, aspect: Double, landscape: Bool) -> CGRect {
+        guard size.width > 0, size.height > 0 else { return .zero }
+        let feed: CGFloat = 9.0 / 16.0
+        let viewRatio = size.width / size.height
+        let video: CGRect
+        if viewRatio > feed {
+            let h = size.width / feed
+            video = CGRect(x: 0, y: (size.height - h) / 2, width: size.width, height: h)
+        } else {
+            let w = size.height * feed
+            video = CGRect(x: (size.width - w) / 2, y: 0, width: w, height: size.height)
+        }
+        let target = CGFloat(landscape ? 1 / aspect : aspect)
+        let vr = video.width / video.height
+        var crop = video
+        if vr > target {
+            let w = video.height * target
+            crop = CGRect(x: video.midX - w / 2, y: video.minY, width: w, height: video.height)
+        } else {
+            let h = video.width / target
+            crop = CGRect(x: video.minX, y: video.midY - h / 2, width: video.width, height: h)
+        }
+        return crop.intersection(CGRect(origin: .zero, size: size))
     }
 }

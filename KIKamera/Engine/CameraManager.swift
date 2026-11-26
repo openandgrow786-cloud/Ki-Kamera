@@ -21,6 +21,12 @@ final class CameraManager: NSObject, ObservableObject {
     private var configured = false
     private var uiTimer: Timer?
     private var pinchStartZoom: CGFloat = 1
+    private weak var previewLayer: AVCaptureVideoPreviewLayer?
+    private var coordinator: AVCaptureDevice.RotationCoordinator?
+    private var angleObservation: NSKeyValueObservation?
+    private var captureAngleNow: CGFloat = 90
+    private var recordingAspect: Double?
+    private var photoAspect: Double?
 
     @Published private(set) var preset: Preset = .standard
     @Published private(set) var isRecording = false
@@ -37,6 +43,9 @@ final class CameraManager: NSObject, ObservableObject {
     @Published private(set) var battery: Float = 1
     @Published private(set) var focusPoint: CGPoint?
     @Published private(set) var photoFlash = false
+    @Published private(set) var processing = false
+    /// Wie das Handy gehalten wird: 0 = hochkant, 90 = quer (oben links), -90 = quer (oben rechts).
+    @Published private(set) var uiRotation: Double = 0
     @Published var message: String? {
         didSet {
             guard let m = message else { return }
@@ -51,6 +60,9 @@ final class CameraManager: NSObject, ObservableObject {
     func start() {
         let first = preset
         UIDevice.current.isBatteryMonitoringEnabled = true
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        NotificationCenter.default.addObserver(self, selector: #selector(orientationChanged),
+                                               name: UIDevice.orientationDidChangeNotification, object: nil)
         refreshDeviceInfo()
         Task {
             let video = await AVCaptureDevice.requestAccess(for: .video)
@@ -76,6 +88,44 @@ final class CameraManager: NSObject, ObservableObject {
            let bytes = values.volumeAvailableCapacityForImportantUsage {
             freeGB = Double(bytes) / 1_000_000_000
         }
+    }
+
+    @objc private func orientationChanged() {
+        guard !isRecording else { return }
+        let next: Double
+        switch UIDevice.current.orientation {
+        case .landscapeLeft: next = 90
+        case .landscapeRight: next = -90
+        case .portrait: next = 0
+        default: return
+        }
+        if next != uiRotation { uiRotation = next }
+    }
+
+    var isLandscape: Bool { uiRotation != 0 }
+
+    /// Das Live-Bild meldet sich an, damit die Aufnahme-Richtung der Handyhaltung folgt.
+    func attach(previewLayer layer: AVCaptureVideoPreviewLayer) {
+        previewLayer = layer
+        makeCoordinator()
+    }
+
+    private func makeCoordinator() {
+        guard let cam = device, let layer = previewLayer else { return }
+        let c = AVCaptureDevice.RotationCoordinator(device: cam, previewLayer: layer)
+        coordinator = c
+        let angle = c.videoRotationAngleForHorizonLevelCapture
+        queue.async { self.captureAngleNow = angle }
+        angleObservation = c.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.new]) { [weak self] co, _ in
+            let a = co.videoRotationAngleForHorizonLevelCapture
+            self?.queue.async { self?.captureAngleNow = a }
+        }
+    }
+
+    private func applyCaptureAngle(to connection: AVCaptureConnection?) {
+        guard let c = connection else { return }
+        let angle = captureAngleNow
+        if c.isVideoRotationAngleSupported(angle) { c.videoRotationAngle = angle }
     }
 
     /// Ganzen Look anwenden (KI, Bibliothek, Code).
@@ -160,6 +210,7 @@ final class CameraManager: NSObject, ObservableObject {
                 session.addInput(input)
                 videoInput = input
                 device = wanted
+                DispatchQueue.main.async { self.makeCoordinator() }
             } else if let old = videoInput, session.canAddInput(old) {
                 session.addInput(old)
             }
@@ -438,6 +489,8 @@ final class CameraManager: NSObject, ObservableObject {
             guard self.movieOutput.connection(with: .video) != nil else { return }
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("KIKamera-\(UUID().uuidString).mov")
+            self.applyCaptureAngle(to: self.movieOutput.connection(with: .video))
+            self.recordingAspect = self.applied?.aspectValue
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
             let limit = self.applied?.maxDuration ?? 0
             DispatchQueue.main.async {
@@ -465,6 +518,8 @@ final class CameraManager: NSObject, ObservableObject {
             }
             settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
             settings.photoQualityPrioritization = .quality
+            self.applyCaptureAngle(to: self.photoOutput.connection(with: .video))
+            self.photoAspect = self.applied?.aspectValue
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
         photoFlash = true
@@ -503,21 +558,53 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
             DispatchQueue.main.async { self.message = "Aufnahme fehlgeschlagen." }
             return
         }
-        saveToPhotos({
-            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: outputFileURL)
-        }, success: "Video in Fotos gespeichert")
+        let aspect = recordingAspect
+        Task {
+            var file = outputFileURL
+            if let aspect {
+                await MainActor.run { self.processing = true }
+                if let cropped = try? await VideoEditor.crop(url: outputFileURL, aspect: aspect) { file = cropped }
+                await MainActor.run { self.processing = false }
+            }
+            self.saveToPhotos({
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: file)
+            }, success: "Video in Fotos gespeichert")
+        }
     }
 }
 
 extension CameraManager: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        guard error == nil, let data = photo.fileDataRepresentation() else {
+        guard error == nil, var data = photo.fileDataRepresentation() else {
             DispatchQueue.main.async { self.message = "Foto fehlgeschlagen." }
             return
+        }
+        if let aspect = photoAspect, let cropped = Self.crop(photoData: data, aspect: aspect) {
+            data = cropped
         }
         saveToPhotos({
             let request = PHAssetCreationRequest.forAsset()
             request.addResource(with: .photo, data: data, options: nil)
         }, success: "Foto in Fotos gespeichert")
+    }
+}
+
+extension CameraManager {
+    /// Schneidet ein Foto auf das gewählte Format zu (nur wenn nötig).
+    static func crop(photoData: Data, aspect: Double) -> Data? {
+        guard let image = UIImage(data: photoData) else { return nil }
+        let w = image.size.width, h = image.size.height
+        guard w > 0, h > 0 else { return nil }
+        let current = Double(w / h)
+        if abs(current - aspect) / aspect < 0.02 { return nil }
+        var cw = w, ch = h
+        if current > aspect { cw = h * CGFloat(aspect) } else { ch = w / CGFloat(aspect) }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: cw.rounded(), height: ch.rounded()), format: format)
+        let out = renderer.image { _ in
+            image.draw(at: CGPoint(x: -(w - cw) / 2, y: -(h - ch) / 2))
+        }
+        return out.jpegData(compressionQuality: 0.95)
     }
 }

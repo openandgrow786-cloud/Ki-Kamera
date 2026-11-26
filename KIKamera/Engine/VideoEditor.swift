@@ -194,4 +194,56 @@ enum VideoEditor {
         guard session.status == .completed else { throw session.error ?? EditorError.export }
         return out
     }
+
+    /// Schneidet ein frisch aufgenommenes Video auf ein Bildformat zu (z. B. 1:1, 4:5, 2,39:1).
+    /// Gibt nil zurück, wenn das Video schon das richtige Format hat.
+    static func crop(url: URL, aspect: Double) async throws -> URL? {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else { return nil }
+        let (natural, transform, fps) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
+        let shown = CGRect(origin: .zero, size: natural).applying(transform)
+        let w = abs(shown.width), h = abs(shown.height)
+        guard w > 0, h > 0 else { return nil }
+        let current = Double(w / h)
+        if abs(current - aspect) / aspect < 0.02 { return nil }
+
+        var cw = w, ch = h
+        if current > aspect { cw = h * CGFloat(aspect) } else { ch = w / CGFloat(aspect) }
+        cw = (cw / 2).rounded(.down) * 2
+        ch = (ch / 2).rounded(.down) * 2
+        let ox = (w - cw) / 2, oy = (h - ch) / 2
+
+        let duration = try await asset.load(.duration)
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+        let t = transform
+            .concatenating(CGAffineTransform(translationX: -shown.origin.x, y: -shown.origin.y))
+            .concatenating(CGAffineTransform(translationX: -ox, y: -oy))
+        layer.setTransform(t, at: .zero)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
+        instruction.layerInstructions = [layer]
+
+        let comp = AVMutableVideoComposition()
+        comp.renderSize = CGSize(width: cw, height: ch)
+        comp.frameDuration = CMTime(value: 1, timescale: CMTimeScale(min(max(fps.rounded(), 24), 120)))
+        comp.instructions = [instruction]
+        if let fd = try await track.load(.formatDescriptions).first,
+           let ext = CMFormatDescriptionGetExtensions(fd) as? [String: Any] {
+            comp.colorPrimaries = ext[kCVImageBufferColorPrimariesKey as String] as? String
+            comp.colorTransferFunction = ext[kCVImageBufferTransferFunctionKey as String] as? String
+            comp.colorYCbCrMatrix = ext[kCVImageBufferYCbCrMatrixKey as String] as? String
+        }
+
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHEVCHighestQuality)
+            ?? AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else { return nil }
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("KIKamera-crop-\(UUID().uuidString).mov")
+        session.outputURL = out
+        session.outputFileType = .mov
+        session.videoComposition = comp
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            session.exportAsynchronously { cont.resume() }
+        }
+        guard session.status == .completed else { throw session.error ?? EditorError.export }
+        return out
+    }
 }

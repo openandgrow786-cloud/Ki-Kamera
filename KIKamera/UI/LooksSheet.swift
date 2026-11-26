@@ -154,6 +154,7 @@ struct LookCard: View {
 /// Einstellungen: Claude API-Key und Modell.
 struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("recFade") private var recFade = "transparent"
     @State private var apiKey = Keychain.get(ClaudeService.keyName) ?? ""
     @State private var model = UserDefaults.standard.string(forKey: ClaudeService.modelKey) ?? ClaudeService.defaultModel
 
@@ -172,8 +173,19 @@ struct SettingsSheet: View {
                 } footer: {
                     Text("Damit versteht die KI freie Wünsche und analysiert Referenzvideos und Clips direkt in der App. Den Key bekommst du auf console.anthropic.com, jede Analyse kostet ein paar Cent. Ohne Key funktionieren Vorschläge, einfache Befehle und Preset-Codes aus dem Chat.")
                 }
+                Section {
+                    Picker("Knöpfe beim Filmen", selection: $recFade) {
+                        Text("Transparent").tag("transparent")
+                        Text("Ganz weg").tag("hidden")
+                        Text("Immer sichtbar").tag("off")
+                    }
+                } header: {
+                    Text("Aufnahme")
+                } footer: {
+                    Text("Während der Aufnahme blenden die Knöpfe weich aus. Tipp aufs Bild, dann kommen sie für 3 Sekunden zurück. Der Aufnahmeknopf bleibt immer sichtbar.")
+                }
                 Section("Info") {
-                    LabeledContent("Version", value: "2.0")
+                    LabeledContent("Version", value: "2.1")
                     LabeledContent("Eigene Looks und Stile", value: "auf diesem iPhone gespeichert")
                 }
             }

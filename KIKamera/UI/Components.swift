@@ -148,6 +148,14 @@ enum LocalAI {
             changed = true
         }
         if t.contains("countdown") { p.countdown = 3; changed = true }
+        let formats: [(String, String)] = [("hochkant", "9:16"), ("vertikal", "9:16"), ("tiktok", "9:16"), ("reels", "9:16"),
+                                           ("quer", "16:9"), ("horizontal", "16:9"), ("youtube", "16:9"),
+                                           ("quadrat", "1:1"), ("1:1", "1:1"), ("instagram", "4:5"), ("4:5", "4:5"),
+                                           ("breitbild", "2.39"), ("kinoformat", "2.39"), ("cinemascope", "2.39")]
+        for (word, a) in formats where t.contains(word) {
+            p.aspect = a
+            changed = true
+        }
         if t.contains("raster aus") { p.grid = false; changed = true }
         if t.contains("raster an") { p.grid = true; changed = true }
 
