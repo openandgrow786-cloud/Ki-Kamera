@@ -13,8 +13,8 @@ targets:
       path: KIKamera/Info.plist
       properties:
         CFBundleDisplayName: KI Kamera
-        CFBundleShortVersionString: "2.2"
-        CFBundleVersion: "4"
+        CFBundleShortVersionString: "3.0"
+        CFBundleVersion: "5"
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
@@ -22,7 +22,8 @@ targets:
         NSCameraUsageDescription: Die App braucht die Kamera, um Videos aufzunehmen.
         NSMicrophoneUsageDescription: Die App braucht das Mikrofon für den Ton deiner Videos.
         NSPhotoLibraryAddUsageDescription: Damit deine Videos in Fotos gespeichert werden.
-        NSPhotoLibraryUsageDescription: Damit du ein Referenzvideo auswählen kannst.
+        NSPhotoLibraryUsageDescription: Damit du ein Referenzvideo auswählen und Videos ins Album speichern kannst.
+        NSSpeechRecognitionUsageDescription: Damit der KI-Editor versteht, was in deinem Video gesagt wird (Untertitel, Versprecher schneiden).
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kikamera.app

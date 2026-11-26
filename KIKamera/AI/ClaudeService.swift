@@ -163,7 +163,7 @@ enum ClaudeService {
         return recipe
     }
 
-    private static func send(system: String, frames: [Data], text: String) async throws -> String {
+    static func send(system: String, frames: [Data], text: String) async throws -> String {
         let key = apiKey
         guard !key.isEmpty else { throw ClaudeError.noKey }
         var content: [[String: Any]] = frames.map { frame in

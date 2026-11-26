@@ -200,7 +200,7 @@ struct SettingsSheet: View {
                 }
 
                 Section("Info") {
-                    LabeledContent("Version", value: "2.2")
+                    LabeledContent("Version", value: "3.0")
                     LabeledContent(L("Eigene Looks und Stile", "Your looks and styles"), value: L("auf diesem iPhone", "on this iPhone"))
                 }
             }
