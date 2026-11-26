@@ -345,8 +345,11 @@ final class CameraManager: NSObject, ObservableObject {
             }
         }
         if #available(iOS 18.0, *), let input = audioInput {
-            let mode: AVCaptureDeviceInput.MultichannelAudioMode = Prefs.stereo ? .stereo : .none
-            if input.isMultichannelAudioModeSupported(mode) { input.multichannelAudioMode = mode }
+            if Prefs.stereo {
+                if input.isMultichannelAudioModeSupported(.stereo) { input.multichannelAudioMode = .stereo }
+            } else {
+                input.multichannelAudioMode = .none
+            }
             if input.isWindNoiseRemovalSupported { input.isWindNoiseRemovalEnabled = Prefs.windFilter }
         }
     }
