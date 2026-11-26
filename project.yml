@@ -1,0 +1,32 @@
+name: KIKamera
+options:
+  bundleIdPrefix: com.kikamera
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  KIKamera:
+    type: application
+    platform: iOS
+    sources: [KIKamera]
+    scheme: {}
+    info:
+      path: KIKamera/Info.plist
+      properties:
+        CFBundleDisplayName: KI Kamera
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: Die App braucht die Kamera, um Videos aufzunehmen.
+        NSMicrophoneUsageDescription: Die App braucht das Mikrofon für den Ton deiner Videos.
+        NSPhotoLibraryAddUsageDescription: Damit deine Videos in Fotos gespeichert werden.
+        NSPhotoLibraryUsageDescription: Damit du ein Referenzvideo auswählen kannst.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kikamera.app
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: "NO"

@@ -1,0 +1,6 @@
+*.xcodeproj
+build/
+Payload/
+*.ipa
+KIKamera/Info.plist
+.DS_Store
