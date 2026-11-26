@@ -25,9 +25,9 @@ struct AISheet: View {
         case failed(String)
     }
 
-    private let suggestions = ["Nachtmodus", "Kino 24", "Slow Motion", "Action", "Vlog Selfie", "Produkt",
-                               "Golden Hour", "Porträt-Foto", "Etwas wärmer", "Heller", "60 fps", "Quer für YouTube", "Instagram 4:5",
-                               "Wie mein Referenzvideo"]
+    private let suggestions = [L("Nachtmodus", "Night mode"), L("Kino 24", "Cinema 24"), "Slow Motion", "Action", "Vlog Selfie", L("Produkt", "Product"),
+                               "Golden Hour", L("Porträt-Foto", "Portrait photo"), L("Etwas wärmer", "A bit warmer"), L("Heller", "Brighter"), "60 fps", L("Quer für YouTube", "Landscape for YouTube"), "Instagram 4:5",
+                               L("Wie mein Referenzvideo", "Like my reference video")]
 
     private var hasKey: Bool { !ClaudeService.apiKey.isEmpty }
 
@@ -49,14 +49,14 @@ struct AISheet: View {
             }
         }
         .onChange(of: pickerItem) { _, item in loadVideo(item) }
-        .alert("Look speichern", isPresented: $showSave) {
-            TextField("Name, z. B. Nachtmodus", text: $saveName)
-            Button("Speichern") {
+        .alert(L("Look speichern", "Save look"), isPresented: $showSave) {
+            TextField(L("Name, z. B. Nachtmodus", "Name, e.g. Night mode"), text: $saveName)
+            Button(L("Speichern", "Save")) {
                 if case .result(let p) = phase { library.save(p, as: saveName) }
             }
-            Button("Abbrechen", role: .cancel) {}
+            Button(L("Abbrechen", "Cancel"), role: .cancel) {}
         } message: {
-            Text("Der Look landet unter „Looks“ und ist jederzeit wieder abrufbar.")
+            Text(L("Der Look landet unter „Looks“ und ist jederzeit wieder abrufbar.", "The look is stored under \"Looks\" and can be recalled any time."))
         }
     }
 
@@ -65,7 +65,7 @@ struct AISheet: View {
             AIOrb(size: 56, active: phase == .working)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(Theme.ui(22, .bold)).foregroundStyle(Theme.text)
-                Text(hasKey ? "KI verbunden" : "Offline-Modus: eingebaute Looks")
+                Text(hasKey ? L("KI verbunden", "AI connected") : L("Offline-Modus: eingebaute Looks", "Offline mode: built-in looks"))
                     .font(Theme.mono(11, .semibold))
                     .foregroundStyle(hasKey ? Theme.cyan : Theme.muted)
             }
@@ -74,16 +74,16 @@ struct AISheet: View {
                 Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.muted)
                     .frame(width: 38, height: 38).glass(19)
             }
-            .accessibilityLabel("Schließen")
+            .accessibilityLabel(L("Schließen", "Close"))
         }
     }
 
     private var title: String {
         switch phase {
-        case .ask: return "Was willst du filmen?"
-        case .working: return "KI analysiert"
+        case .ask: return L("Was willst du filmen?", "What do you want to shoot?")
+        case .working: return L("KI analysiert", "AI is analyzing")
         case .result(let p): return p.name
-        case .failed: return "Hinweis"
+        case .failed: return L("Hinweis", "Note")
         }
     }
 
@@ -91,9 +91,9 @@ struct AISheet: View {
 
     private var askView: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PromptField(placeholder: "z. B. Nachtmodus, warm, 24 fps …", text: $prompt) { Task { await run() } }
+            PromptField(placeholder: L("z. B. Nachtmodus, warm, 24 fps …", "e.g. night mode, warm, 24 fps …"), text: $prompt) { Task { await run() } }
 
-            SectionLabel(text: "Vorschläge")
+            SectionLabel(text: L("Vorschläge", "Suggestions"))
             FlowLayout(spacing: 8) {
                 ForEach(suggestions, id: \.self) { s in
                     Chip(text: s) {
@@ -103,7 +103,7 @@ struct AISheet: View {
                 }
             }
 
-            SectionLabel(text: "Referenz")
+            SectionLabel(text: L("Referenz", "Reference"))
             PhotosPicker(selection: $pickerItem, matching: .videos) {
                 HStack(spacing: 14) {
                     ZStack {
@@ -117,10 +117,10 @@ struct AISheet: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(videoURL == nil ? "Referenzvideo zeigen" : "Referenzvideo bereit")
+                        Text(videoURL == nil ? L("Referenzvideo zeigen", "Show reference video") : L("Referenzvideo bereit", "Reference video ready"))
                             .font(Theme.ui(16, .semibold)).foregroundStyle(Theme.text)
-                        Text(videoURL == nil ? "Die KI kopiert Licht, Farbe, Bewegung und Objektiv"
-                                             : "Tipp auf den Pfeil oben, um es zu analysieren")
+                        Text(videoURL == nil ? L("Die KI kopiert Licht, Farbe, Bewegung und Objektiv", "The AI copies light, color, motion and lens")
+                                             : L("Tipp auf den Pfeil oben, um es zu analysieren", "Tap the arrow above to analyze it"))
                             .font(Theme.ui(12)).foregroundStyle(Theme.muted)
                     }
                     Spacer()
@@ -131,12 +131,12 @@ struct AISheet: View {
             .buttonStyle(.plain)
 
             Button(action: pasteCode) {
-                Label("Preset-Code einfügen", systemImage: "doc.on.clipboard")
+                Label(L("Preset-Code einfügen", "Paste preset code"), systemImage: "doc.on.clipboard")
             }
             .buttonStyle(GlassButtonStyle())
 
             if !hasKey {
-                Text("Ohne API-Key versteht die KI Vorschläge und einfache Befehle wie „wärmer“ oder „60 fps“. Für freie Wünsche und Videoanalyse: Zahnrad → Claude API-Key. Oder schick das Video an Claude im Chat und füg den Preset-Code ein.")
+                Text(L("Ohne API-Key versteht die KI Vorschläge und einfache Befehle wie „wärmer“ oder „60 fps“. Für freie Wünsche und Videoanalyse: Zahnrad → Claude API-Key. Oder schick das Video an Claude im Chat und füg den Preset-Code ein.", "Without an API key the AI understands suggestions and simple commands like \"warmer\" or \"60 fps\". For free requests and video analysis: gear → Claude API key. Or send the video to Claude in the chat and paste the preset code."))
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.muted)
             }
@@ -161,19 +161,19 @@ struct AISheet: View {
 
     private func resultView(_ p: Preset) -> some View {
         let rows: [(String, String, String)] = [
-            ("Kamera", current.lens.focal, p.lens.focal),
-            ("Modus", current.isPhoto ? "Foto" : "Video", p.isPhoto ? "Foto" : "Video"),
+            (L("Kamera", "Camera"), current.lens.focal, p.lens.focal),
+            (L("Modus", "Mode"), current.isPhoto ? L("Foto", "Photo") : "Video", p.isPhoto ? L("Foto", "Photo") : "Video"),
             ("Format", current.aspectLabel, p.aspectLabel),
-            ("Auflösung", current.resolutionText, p.resolutionText),
+            (L("Auflösung", "Resolution"), current.resolutionText, p.resolutionText),
             ("FPS", current.fpsText, p.fpsText),
-            ("Verschluss", current.shutterText, p.shutterText),
+            (L("Verschluss", "Shutter"), current.shutterText, p.shutterText),
             ("ISO", current.isoText, p.isoText),
-            ("Weißabgleich", current.wbText, p.wbText),
+            (L("Weißabgleich", "White balance"), current.wbText, p.wbText),
             ("Tint", current.tintText, p.tintText),
-            ("Belichtung", current.evText, p.evText),
+            (L("Belichtung", "Exposure"), current.evText, p.evText),
             ("Zoom", String(format: "%.1f×", current.effectiveZoom), String(format: "%.1f×", p.effectiveZoom)),
-            ("HDR", current.hdr ? "An" : "Aus", p.hdr ? "An" : "Aus"),
-            ("Stabilisierung", current.stabilization, p.stabilization),
+            ("HDR", current.hdr ? "An" : L("Aus", "Off"), p.hdr ? "An" : L("Aus", "Off")),
+            (L("Stabilisierung", "Stabilization"), current.stabilization, p.stabilization),
             ("Countdown", "\(current.countdown) s", "\(p.countdown) s")
         ]
         return VStack(alignment: .leading, spacing: 16) {
@@ -202,15 +202,15 @@ struct AISheet: View {
             }
             .glass(18)
 
-            Button("Übernehmen") { onApply(p) }
+            Button(L("Übernehmen", "Apply")) { onApply(p) }
                 .buttonStyle(GoldButtonStyle())
             HStack(spacing: 10) {
                 Button {
                     saveName = p.name
                     showSave = true
-                } label: { Label("Als Look speichern", systemImage: "bookmark") }
+                } label: { Label(L("Als Look speichern", "Save as look"), systemImage: "bookmark") }
                 .buttonStyle(GlassButtonStyle())
-                Button { phase = .ask } label: { Label("Nochmal", systemImage: "arrow.counterclockwise") }
+                Button { phase = .ask } label: { Label(L("Nochmal", "Try again"), systemImage: "arrow.counterclockwise") }
                     .buttonStyle(GlassButtonStyle())
             }
         }
@@ -220,7 +220,7 @@ struct AISheet: View {
     private func failedView(_ msg: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(msg).font(Theme.ui(15)).foregroundStyle(Theme.text)
-            Button("Zurück") { phase = .ask }.buttonStyle(GlassButtonStyle())
+            Button(L("Zurück", "Back")) { phase = .ask }.buttonStyle(GlassButtonStyle())
         }
     }
 
@@ -234,7 +234,7 @@ struct AISheet: View {
             await MainActor.run {
                 videoURL = file?.url
                 loadingVideo = false
-                if file == nil { phase = .failed("Das Video konnte nicht geladen werden.") }
+                if file == nil { phase = .failed(L("Das Video konnte nicht geladen werden.", "Could not load the video.")) }
             }
         }
     }
@@ -245,10 +245,10 @@ struct AISheet: View {
 
         guard hasKey else {
             if videoURL != nil && text.isEmpty {
-                phase = .failed("Für die Videoanalyse in der App brauchst du einen Claude API-Key (Zahnrad oben rechts).\n\nOhne Key: Schick das Video an Claude im Chat, kopier den Preset-Code und tipp auf „Preset-Code einfügen“.")
+                phase = .failed(L("Für die Videoanalyse in der App brauchst du einen Claude API-Key (Zahnrad oben rechts).\n\nOhne Key: Schick das Video an Claude im Chat, kopier den Preset-Code und tipp auf „Preset-Code einfügen“.", "For video analysis in the app you need a Claude API key (gear at the top right).\n\nWithout a key: send the video to Claude in the chat, copy the preset code and tap \"Paste preset code\"."))
             } else {
                 phase = .working
-                status = "Look wird zusammengestellt …"
+                status = L("Look wird zusammengestellt …", "Building the look …")
                 try? await Task.sleep(nanoseconds: 700_000_000)
                 phase = .result(LocalAI.interpret(text, current: current))
             }
@@ -259,10 +259,10 @@ struct AISheet: View {
         do {
             var reference: ReferenceInfo?
             if let url = videoURL {
-                status = "Referenzvideo wird gelesen …"
+                status = L("Referenzvideo wird gelesen …", "Reading reference video …")
                 reference = try await ReferenceAnalyzer.load(url: url)
             }
-            status = "KI analysiert Licht, Farbe und Bewegung …"
+            status = L("KI analysiert Licht, Farbe und Bewegung …", "AI is analyzing light, color and motion …")
             let preset = try await ClaudeService.makePreset(request: text, current: current, reference: reference)
             phase = .result(preset)
         } catch {
@@ -274,7 +274,7 @@ struct AISheet: View {
         if let text = UIPasteboard.general.string, let p = PresetCode.decode(text) {
             phase = .result(p)
         } else {
-            phase = .failed("In der Zwischenablage ist kein gültiger Preset-Code.")
+            phase = .failed(L("In der Zwischenablage ist kein gültiger Preset-Code.", "There is no valid preset code in the clipboard."))
         }
     }
 }

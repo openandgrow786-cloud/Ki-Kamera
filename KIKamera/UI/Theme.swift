@@ -3,10 +3,13 @@ import SwiftUI
 @main
 struct KIKameraApp: App {
     @StateObject private var library = LookLibrary()
+    @StateObject private var cam = CameraManager()
+    @AppStorage("lang") private var lang = Prefs.language
 
     var body: some Scene {
         WindowGroup {
-            CameraScreen()
+            CameraScreen(cam: cam)
+                .id(lang)
                 .environmentObject(library)
                 .preferredColorScheme(.dark)
                 .tint(Theme.gold)

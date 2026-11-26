@@ -72,31 +72,31 @@ struct EditRecipe: Codable, Equatable {
         return r
     }
 
-    static let original = EditRecipe(name: "Original")
-    static let cinematic = EditRecipe(name: "Cinematic", exposure: -0.1, contrast: 1.15, saturation: 0.85, warmth: 12,
-                                      tint: -6, vignette: 0.35, grain: 0.15, sharpen: 0.2, fade: 0.15)
-    static let vintage = EditRecipe(name: "Warm Vintage", contrast: 0.92, saturation: 0.8, warmth: 35, tint: 8,
-                                    vignette: 0.45, grain: 0.4, fade: 0.45)
-    static let noir = EditRecipe(name: "Noir", contrast: 1.35, vignette: 0.55, grain: 0.3, sharpen: 0.3, blackWhite: true)
-    static let neon = EditRecipe(name: "Neon Nacht", exposure: 0.2, contrast: 1.2, saturation: 1.35, warmth: -30,
-                                 tint: 18, vignette: 0.3, sharpen: 0.2)
-    static let clean = EditRecipe(name: "Clean", exposure: 0.1, contrast: 1.05, saturation: 1.08, sharpen: 0.35)
-    static let dreamy = EditRecipe(name: "Dreamy", exposure: 0.25, contrast: 0.85, saturation: 0.9, warmth: 15, tint: 10,
-                                   vignette: 0.2, fade: 0.5)
+    static var original: EditRecipe { EditRecipe(name: "Original") }
+    static var cinematic: EditRecipe { EditRecipe(name: "Cinematic", exposure: -0.1, contrast: 1.15, saturation: 0.85, warmth: 12,
+                                      tint: -6, vignette: 0.35, grain: 0.15, sharpen: 0.2, fade: 0.15) }
+    static var vintage: EditRecipe { EditRecipe(name: "Warm Vintage", contrast: 0.92, saturation: 0.8, warmth: 35, tint: 8,
+                                    vignette: 0.45, grain: 0.4, fade: 0.45) }
+    static var noir: EditRecipe { EditRecipe(name: "Noir", contrast: 1.35, vignette: 0.55, grain: 0.3, sharpen: 0.3, blackWhite: true) }
+    static var neon: EditRecipe { EditRecipe(name: L("Neon Nacht", "Neon Night"), exposure: 0.2, contrast: 1.2, saturation: 1.35, warmth: -30,
+                                 tint: 18, vignette: 0.3, sharpen: 0.2) }
+    static var clean: EditRecipe { EditRecipe(name: "Clean", exposure: 0.1, contrast: 1.05, saturation: 1.08, sharpen: 0.35) }
+    static var dreamy: EditRecipe { EditRecipe(name: "Dreamy", exposure: 0.25, contrast: 0.85, saturation: 0.9, warmth: 15, tint: 10,
+                                   vignette: 0.2, fade: 0.5) }
 
-    static let builtIn: [EditRecipe] = [.original, .cinematic, .vintage, .noir, .neon, .clean, .dreamy]
+    static var builtIn: [EditRecipe] { [.original, .cinematic, .vintage, .noir, .neon, .clean, .dreamy] }
 
     static func match(text: String) -> EditRecipe {
         let t = text.lowercased()
         var r: EditRecipe
         if t.contains("schwarz") || t.contains("noir") || t.contains("black") { r = .noir }
         else if t.contains("vintage") || t.contains("retro") || t.contains("alt") { r = .vintage }
-        else if t.contains("neon") || t.contains("nacht") { r = .neon }
+        else if t.contains("neon") || t.contains("nacht") || t.contains("night") { r = .neon }
         else if t.contains("dream") || t.contains("verträumt") || t.contains("weich") { r = .dreamy }
-        else if t.contains("clean") || t.contains("klar") || t.contains("scharf") { r = .clean }
+        else if t.contains("clean") || t.contains("klar") || t.contains("scharf") || t.contains("sharp") { r = .clean }
         else { r = .cinematic }
         if t.contains("zeitlupe") || t.contains("slow") { r.speed = 0.5 }
-        if t.contains("schneller") || t.contains("fast") { r.speed = 1.5 }
+        if t.contains("schneller") || t.contains("fast") || t.contains("faster") { r.speed = 1.5 }
         return r
     }
 }

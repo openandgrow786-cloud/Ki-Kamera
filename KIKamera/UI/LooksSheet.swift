@@ -28,20 +28,20 @@ struct LooksSheet: View {
                             Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.muted)
                                 .frame(width: 38, height: 38).glass(19)
                         }
-                        .accessibilityLabel("Schließen")
+                        .accessibilityLabel(L("Schließen", "Close"))
                     }
 
                     Button {
                         saveName = current.name
                         showSave = true
                     } label: {
-                        Label("Aktuelle Einstellungen speichern", systemImage: "plus")
+                        Label(L("Aktuelle Einstellungen speichern", "Save current settings"), systemImage: "plus")
                     }
                     .buttonStyle(GoldButtonStyle())
 
-                    SectionLabel(text: "Meine Looks")
+                    SectionLabel(text: L("Meine Looks", "My looks"))
                     if library.looks.isEmpty {
-                        Text("Noch keine eigenen Looks. Stell die Kamera ein (oder lass die KI das machen) und speichere sie, z. B. als „Nachtmodus“.")
+                        Text(L("Noch keine eigenen Looks. Stell die Kamera ein (oder lass die KI das machen) und speichere sie, z. B. als „Nachtmodus“.", "No looks of your own yet. Set up the camera (or let the AI do it) and save it, e.g. as \"Night mode\"."))
                             .font(Theme.ui(13))
                             .foregroundStyle(Theme.muted)
                     } else {
@@ -54,21 +54,21 @@ struct LooksSheet: View {
                                     Button {
                                         renameText = look.preset.name
                                         renaming = look
-                                    } label: { Label("Umbenennen", systemImage: "pencil") }
+                                    } label: { Label(L("Umbenennen", "Rename"), systemImage: "pencil") }
                                     Button {
                                         UIPasteboard.general.string = PresetCode.encode(look.preset)
                                         copied = look.preset.name
-                                    } label: { Label("Code kopieren", systemImage: "doc.on.doc") }
+                                    } label: { Label(L("Code kopieren", "Copy code"), systemImage: "doc.on.doc") }
                                     Button(role: .destructive) {
                                         withAnimation { library.delete(look) }
-                                    } label: { Label("Löschen", systemImage: "trash") }
+                                    } label: { Label(L("Löschen", "Delete"), systemImage: "trash") }
                                 }
                                 .transition(.scale.combined(with: .opacity))
                             }
                         }
                     }
 
-                    SectionLabel(text: "Eingebaut")
+                    SectionLabel(text: L("Eingebaut", "Built-in"))
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(Preset.builtIn, id: \.name) { preset in
                             LookCard(preset: preset, active: preset.name == current.name, custom: false) {
@@ -78,27 +78,27 @@ struct LooksSheet: View {
                     }
 
                     if let copied {
-                        Text("Code von „\(copied)“ kopiert.").font(Theme.ui(12)).foregroundStyle(Theme.cyan)
+                        Text(L("Code von „\(copied)“ kopiert.", "Code of \"\(copied)\" copied.")).font(Theme.ui(12)).foregroundStyle(Theme.cyan)
                     }
-                    Text("Tipp: Lange drücken zum Umbenennen, Teilen als Code oder Löschen.")
+                    Text(L("Tipp: Lange drücken zum Umbenennen, Teilen als Code oder Löschen.", "Tip: Long-press to rename, share as code or delete."))
                         .font(Theme.ui(12)).foregroundStyle(Theme.muted)
                 }
                 .padding(20)
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: library.looks)
             }
         }
-        .alert("Look speichern", isPresented: $showSave) {
-            TextField("Name, z. B. Nachtmodus", text: $saveName)
-            Button("Speichern") { withAnimation { library.save(current, as: saveName) } }
-            Button("Abbrechen", role: .cancel) {}
+        .alert(L("Look speichern", "Save look"), isPresented: $showSave) {
+            TextField(L("Name, z. B. Nachtmodus", "Name, e.g. Night mode"), text: $saveName)
+            Button(L("Speichern", "Save")) { withAnimation { library.save(current, as: saveName) } }
+            Button(L("Abbrechen", "Cancel"), role: .cancel) {}
         }
-        .alert("Umbenennen", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+        .alert(L("Umbenennen", "Rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $renameText)
             Button("OK") {
                 if let r = renaming { library.rename(r, to: renameText) }
                 renaming = nil
             }
-            Button("Abbrechen", role: .cancel) { renaming = nil }
+            Button(L("Abbrechen", "Cancel"), role: .cancel) { renaming = nil }
         }
     }
 }
@@ -128,7 +128,7 @@ struct LookCard: View {
                         .foregroundStyle(custom ? AnyShapeStyle(Theme.goldGradient) : AnyShapeStyle(Theme.cyan))
                     Spacer()
                     if active {
-                        Text("AKTIV").font(Theme.mono(9, .heavy)).foregroundStyle(Theme.bg)
+                        Text(L("AKTIV", "ACTIVE")).font(Theme.mono(9, .heavy)).foregroundStyle(Theme.bg)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Capsule().fill(Theme.goldGradient))
                     }
@@ -148,60 +148,5 @@ struct LookCard: View {
             .glass(18, glow: active ? Theme.gold : nil)
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Einstellungen: Claude API-Key und Modell.
-struct SettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @AppStorage("recFade") private var recFade = "transparent"
-    @State private var apiKey = Keychain.get(ClaudeService.keyName) ?? ""
-    @State private var model = UserDefaults.standard.string(forKey: ClaudeService.modelKey) ?? ClaudeService.defaultModel
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    SecureField("sk-ant-…", text: $apiKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Modell", text: $model)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Claude API")
-                } footer: {
-                    Text("Damit versteht die KI freie Wünsche und analysiert Referenzvideos und Clips direkt in der App. Den Key bekommst du auf console.anthropic.com, jede Analyse kostet ein paar Cent. Ohne Key funktionieren Vorschläge, einfache Befehle und Preset-Codes aus dem Chat.")
-                }
-                Section {
-                    Picker("Knöpfe beim Filmen", selection: $recFade) {
-                        Text("Transparent").tag("transparent")
-                        Text("Ganz weg").tag("hidden")
-                        Text("Immer sichtbar").tag("off")
-                    }
-                } header: {
-                    Text("Aufnahme")
-                } footer: {
-                    Text("Während der Aufnahme blenden die Knöpfe weich aus. Tipp aufs Bild, dann kommen sie für 3 Sekunden zurück. Der Aufnahmeknopf bleibt immer sichtbar.")
-                }
-                Section("Info") {
-                    LabeledContent("Version", value: "2.1")
-                    LabeledContent("Eigene Looks und Stile", value: "auf diesem iPhone gespeichert")
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Theme.bg)
-            .navigationTitle("Einstellungen")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fertig") {
-                        Keychain.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: ClaudeService.keyName)
-                        UserDefaults.standard.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: ClaudeService.modelKey)
-                        dismiss()
-                    }
-                }
-            }
-        }
     }
 }

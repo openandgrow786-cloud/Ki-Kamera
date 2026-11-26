@@ -106,7 +106,7 @@ struct PromptField: View {
                 .frame(width: 40, height: 40)
             }
             .disabled(busy)
-            .accessibilityLabel("Senden")
+            .accessibilityLabel(L("Senden", "Send"))
         }
         .padding(.leading, 16)
         .padding(.trailing, 6)
@@ -138,10 +138,10 @@ enum LocalAI {
         var p = current
         var changed = false
 
-        if t.contains("wärmer") { p.whiteBalance = (p.whiteBalance ?? 5600) - 500; changed = true }
-        if t.contains("kälter") || t.contains("kühler") { p.whiteBalance = (p.whiteBalance ?? 5600) + 500; changed = true }
-        if t.contains("heller") { p.exposureBias = min(p.exposureBias + 0.5, 2); changed = true }
-        if t.contains("dunkler") { p.exposureBias = max(p.exposureBias - 0.5, -2); changed = true }
+        if t.contains("wärmer") || t.contains("warmer") { p.whiteBalance = (p.whiteBalance ?? 5600) - 500; changed = true }
+        if t.contains("kälter") || t.contains("kühler") || t.contains("cooler") || t.contains("colder") { p.whiteBalance = (p.whiteBalance ?? 5600) + 500; changed = true }
+        if t.contains("heller") || t.contains("brighter") { p.exposureBias = min(p.exposureBias + 0.5, 2); changed = true }
+        if t.contains("dunkler") || t.contains("darker") { p.exposureBias = max(p.exposureBias - 0.5, -2); changed = true }
         for f in [24, 25, 30, 48, 50, 60, 100, 120] where t.contains("\(f) fps") || t.contains("\(f)fps") {
             p.fps = Double(f)
             p.shutter = Double(f * 2)
@@ -149,22 +149,22 @@ enum LocalAI {
         }
         if t.contains("countdown") { p.countdown = 3; changed = true }
         let formats: [(String, String)] = [("hochkant", "9:16"), ("vertikal", "9:16"), ("tiktok", "9:16"), ("reels", "9:16"),
-                                           ("quer", "16:9"), ("horizontal", "16:9"), ("youtube", "16:9"),
-                                           ("quadrat", "1:1"), ("1:1", "1:1"), ("instagram", "4:5"), ("4:5", "4:5"),
-                                           ("breitbild", "2.39"), ("kinoformat", "2.39"), ("cinemascope", "2.39")]
+                                           ("quer", "16:9"), ("horizontal", "16:9"), ("landscape", "16:9"), ("youtube", "16:9"), ("vertical", "9:16"),
+                                           ("quadrat", "1:1"), ("square", "1:1"), ("1:1", "1:1"), ("instagram", "4:5"), ("4:5", "4:5"),
+                                           ("breitbild", "2.39"), ("widescreen", "2.39"), ("kinoformat", "2.39"), ("cinemascope", "2.39")]
         for (word, a) in formats where t.contains(word) {
             p.aspect = a
             changed = true
         }
-        if t.contains("raster aus") { p.grid = false; changed = true }
-        if t.contains("raster an") { p.grid = true; changed = true }
+        if t.contains("raster aus") || t.contains("grid off") { p.grid = false; changed = true }
+        if t.contains("raster an") || t.contains("grid on") { p.grid = true; changed = true }
 
         if changed {
-            p.note = "Ohne API-Key: Änderung am aktuellen Look."
+            p.note = L("Ohne API-Key: Änderung am aktuellen Look.", "No API key: change to the current look.")
             return p
         }
         var m = Preset.match(text: text)
-        m.note = (m.note ?? "") + " (Eingebauter Look, ohne API-Key.)"
+        m.note = (m.note ?? "") + L(" (Eingebauter Look, ohne API-Key.)", " (Built-in look, no API key.)")
         return m
     }
 }

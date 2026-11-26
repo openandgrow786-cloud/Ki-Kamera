@@ -12,6 +12,7 @@ final class CameraManager: NSObject, ObservableObject {
     private let movieOutput = AVCaptureMovieFileOutput()
     private let photoOutput = AVCapturePhotoOutput()
     private var videoInput: AVCaptureDeviceInput?
+    private var audioInput: AVCaptureDeviceInput?
     private var device: AVCaptureDevice?
     private var applied: Preset?
     private var isoTimer: DispatchSourceTimer?
@@ -44,6 +45,8 @@ final class CameraManager: NSObject, ObservableObject {
     @Published private(set) var focusPoint: CGPoint?
     @Published private(set) var photoFlash = false
     @Published private(set) var processing = false
+    /// Wird hochgezählt, wenn Lautstärke- oder Kamerataste gedrückt wurde.
+    @Published private(set) var shutterRequests = 0
     /// Wie das Handy gehalten wird: 0 = hochkant, 90 = quer (oben links), -90 = quer (oben rechts).
     @Published private(set) var uiRotation: Double = 0
     @Published var message: String? {
@@ -57,7 +60,11 @@ final class CameraManager: NSObject, ObservableObject {
 
     // MARK: - Start
 
+    private var started = false
+
     func start() {
+        guard !started else { return }
+        started = true
         let first = preset
         UIDevice.current.isBatteryMonitoringEnabled = true
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
@@ -90,8 +97,22 @@ final class CameraManager: NSObject, ObservableObject {
         }
     }
 
+    func hardwareShutter() {
+        guard Prefs.volumeTrigger else { return }
+        shutterRequests += 1
+    }
+
+    /// Einstellungen neu einlesen und Kamera komplett neu aufbauen.
+    func reloadPrefs() {
+        let p = preset
+        queue.async {
+            self.applied = nil
+            self.applyOnQueue(p)
+        }
+    }
+
     @objc private func orientationChanged() {
-        guard !isRecording else { return }
+        guard !isRecording, !Prefs.lockOrientation else { return }
         let next: Double
         switch UIDevice.current.orientation {
         case .landscapeLeft: next = 90
@@ -118,6 +139,7 @@ final class CameraManager: NSObject, ObservableObject {
         queue.async { self.captureAngleNow = angle }
         angleObservation = c.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.new]) { [weak self] co, _ in
             let a = co.videoRotationAngleForHorizonLevelCapture
+            guard !Prefs.lockOrientation else { return }
             self?.queue.async { self?.captureAngleNow = a }
         }
     }
@@ -159,6 +181,7 @@ final class CameraManager: NSObject, ObservableObject {
            let input = try? AVCaptureDeviceInput(device: mic),
            session.canAddInput(input) {
             session.addInput(input)
+            audioInput = input
         }
         if session.canAddOutput(movieOutput) { session.addOutput(movieOutput) }
         if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
@@ -223,7 +246,9 @@ final class CameraManager: NSObject, ObservableObject {
             if let format = Self.bestFormat(for: cam, preset: p) { cam.activeFormat = format }
             let f = cam.activeFormat
 
-            if p.hdr, f.supportedColorSpaces.contains(.HLG_BT2020) {
+            if p.log, f.supportedColorSpaces.contains(.appleLog) {
+                cam.activeColorSpace = .appleLog
+            } else if p.hdr, f.supportedColorSpaces.contains(.HLG_BT2020) {
                 cam.activeColorSpace = .HLG_BT2020
             } else if f.supportedColorSpaces.contains(.sRGB) {
                 cam.activeColorSpace = .sRGB
@@ -236,6 +261,9 @@ final class CameraManager: NSObject, ObservableObject {
                 let frame = Self.frameDuration(for: p.fps, in: range)
                 cam.activeVideoMinFrameDuration = frame
                 cam.activeVideoMaxFrameDuration = frame
+            }
+            if cam.isGeometricDistortionCorrectionSupported {
+                cam.isGeometricDistortionCorrectionEnabled = Prefs.lensCorrection
             }
             cam.unlockForConfiguration()
 
@@ -250,14 +278,14 @@ final class CameraManager: NSObject, ObservableObject {
                 self.aperture = ap
             }
         } catch {
-            DispatchQueue.main.async { self.message = "Kamera-Fehler: \(error.localizedDescription)" }
+            DispatchQueue.main.async { self.message = L("Kamera-Fehler: ", "Camera error: ") + error.localizedDescription }
         }
 
         for c in [movieOutput.connection(with: .video), photoOutput.connection(with: .video)].compactMap({ $0 }) {
             if c.isVideoRotationAngleSupported(90) { c.videoRotationAngle = 90 }
             if c.isVideoMirroringSupported {
                 c.automaticallyAdjustsVideoMirroring = false
-                c.isVideoMirrored = (p.lens == .front)
+                c.isVideoMirrored = (p.lens == .front) && Prefs.mirrorFront
             }
         }
         if let c = movieOutput.connection(with: .video) {
@@ -268,19 +296,59 @@ final class CameraManager: NSObject, ObservableObject {
                 default: c.preferredVideoStabilizationMode = .auto
                 }
             }
-            let codec: AVVideoCodecType = p.codec.lowercased() == "h264" ? .h264 : .hevc
+            let codec: AVVideoCodecType
+            switch p.codec.lowercased() {
+            case "h264": codec = .h264
+            case "prores": codec = .proRes422HQ
+            default: codec = .hevc
+            }
             if movieOutput.availableVideoCodecTypes.contains(codec) {
                 movieOutput.setOutputSettings([AVVideoCodecKey: codec], for: c)
+            } else {
+                movieOutput.setOutputSettings([AVVideoCodecKey: AVVideoCodecType.hevc], for: c)
+                if codec != .hevc {
+                    DispatchQueue.main.async {
+                        self.message = L("Dieser Codec geht mit diesem Format nicht, HEVC wird genutzt.",
+                                         "This codec is not available for this format, using HEVC.")
+                    }
+                }
             }
         }
+        configureAudio()
 
         if abs(requestedFPS - p.fps) > 0.5 {
             let got = Int(p.fps.rounded())
             DispatchQueue.main.async {
-                self.message = "Dieses Objektiv schafft hier max. \(got) fps, daher eingestellt."
+                self.message = L("Dieses Objektiv schafft hier max. \(got) fps, daher eingestellt.", "This lens can do max. \(got) fps here, so that is set.")
             }
         }
         return true
+    }
+
+    /// Audioformat, Stereo und Windfilter aus den Einstellungen.
+    private func configureAudio() {
+        if let a = movieOutput.connection(with: .audio) {
+            let keys = movieOutput.supportedOutputSettingsKeys(for: a)
+            if keys.contains(AVFormatIDKey) {
+                var settings: [String: Any] = [AVSampleRateKey: 48_000, AVNumberOfChannelsKey: Prefs.stereo ? 2 : 1]
+                if Prefs.audioFormat == "pcm" {
+                    settings[AVFormatIDKey] = kAudioFormatLinearPCM
+                    settings[AVLinearPCMBitDepthKey] = 24
+                    settings[AVLinearPCMIsFloatKey] = false
+                    settings[AVLinearPCMIsBigEndianKey] = false
+                    settings[AVLinearPCMIsNonInterleaved] = false
+                } else {
+                    settings[AVFormatIDKey] = kAudioFormatMPEG4AAC
+                    settings[AVEncoderBitRateKey] = Prefs.stereo ? 256_000 : 128_000
+                }
+                movieOutput.setOutputSettings(settings, for: a)
+            }
+        }
+        if #available(iOS 18.0, *), let input = audioInput {
+            let mode: AVCaptureDeviceInput.MultichannelAudioMode = Prefs.stereo ? .stereo : .none
+            if input.isMultichannelAudioModeSupported(mode) { input.multichannelAudioMode = mode }
+            if input.isWindNoiseRemovalSupported { input.isWindNoiseRemovalEnabled = Prefs.windFilter }
+        }
     }
 
     /// Zoom, Fokus, Weißabgleich, Verschluss, ISO, Belichtungskorrektur. Geht auch während der Aufnahme.
@@ -363,7 +431,10 @@ final class CameraManager: NSObject, ObservableObject {
             if supports(f) { s += 50 }
             let hlg = f.supportedColorSpaces.contains(.HLG_BT2020)
             let isTen = CMFormatDescriptionGetMediaSubType(f.formatDescription) == tenBit
-            if p.hdr {
+            if p.log {
+                if f.supportedColorSpaces.contains(.appleLog) { s += 40 }
+                if isTen { s += 10 }
+            } else if p.hdr {
                 if hlg { s += 20 }
                 if isTen { s += 10 }
             } else {
@@ -466,7 +537,8 @@ final class CameraManager: NSObject, ObservableObject {
     private func meterStep() {
         guard let channels = movieOutput.connection(with: .audio)?.audioChannels, !channels.isEmpty else { return }
         func norm(_ db: Float) -> Float { db.isFinite ? min(max((db + 60) / 60, 0), 1) : 0 }
-        var levels = channels.prefix(2).map { norm($0.averagePowerLevel) }
+        let ppm = Prefs.meterScale == "ppm"
+        var levels = channels.prefix(2).map { norm(ppm ? $0.peakHoldLevel : $0.averagePowerLevel) }
         var peaks = channels.prefix(2).map { norm($0.peakHoldLevel) }
         if levels.count == 1 {
             levels.append(levels[0])
@@ -491,6 +563,11 @@ final class CameraManager: NSObject, ObservableObject {
                 .appendingPathComponent("KIKamera-\(UUID().uuidString).mov")
             self.applyCaptureAngle(to: self.movieOutput.connection(with: .video))
             self.recordingAspect = self.applied?.aspectValue
+            if Prefs.lockWBOnRecord, let cam = self.device, cam.whiteBalanceMode == .continuousAutoWhiteBalance,
+               cam.isWhiteBalanceModeSupported(.locked), (try? cam.lockForConfiguration()) != nil {
+                cam.setWhiteBalanceModeLocked(with: AVCaptureDevice.currentWhiteBalanceGains, completionHandler: nil)
+                cam.unlockForConfiguration()
+            }
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
             let limit = self.applied?.maxDuration ?? 0
             DispatchQueue.main.async {
@@ -526,15 +603,31 @@ final class CameraManager: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.photoFlash = false }
     }
 
-    fileprivate func saveToPhotos(_ change: @escaping () -> Void, success: String) {
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+    fileprivate func saveToPhotos(_ change: @escaping () -> PHObjectPlaceholder?, success: String) {
+        let useAlbum = Prefs.album
+        PHPhotoLibrary.requestAuthorization(for: useAlbum ? .readWrite : .addOnly) { status in
             guard status == .authorized || status == .limited else {
-                DispatchQueue.main.async { self.message = "Kein Zugriff auf Fotos, nicht gespeichert." }
+                DispatchQueue.main.async { self.message = L("Kein Zugriff auf Fotos, nicht gespeichert.", "No access to Photos, not saved.") }
                 return
             }
-            PHPhotoLibrary.shared().performChanges(change) { saved, _ in
+            var album: PHAssetCollection?
+            if useAlbum && status == .authorized {
+                let opts = PHFetchOptions()
+                opts.predicate = NSPredicate(format: "title = %@", "KI Kamera")
+                album = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: opts).firstObject
+            }
+            let wantAlbum = useAlbum && status == .authorized
+            PHPhotoLibrary.shared().performChanges({
+                guard let placeholder = change(), wantAlbum else { return }
+                if let album, let req = PHAssetCollectionChangeRequest(for: album) {
+                    req.addAssets([placeholder] as NSArray)
+                } else {
+                    let req = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: "KI Kamera")
+                    req.addAssets([placeholder] as NSArray)
+                }
+            }) { saved, _ in
                 DispatchQueue.main.async {
-                    self.message = saved ? success : "Speichern fehlgeschlagen."
+                    self.message = saved ? success : L("Speichern fehlgeschlagen.", "Saving failed.")
                     self.refreshDeviceInfo()
                 }
             }
@@ -550,12 +643,13 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
             self.uiTimer?.invalidate()
             self.uiTimer = nil
         }
+        queue.async { if let p = self.applied { self.tune(p) } }
         var ok = true
         if let error = error as NSError? {
             ok = (error.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool) ?? false
         }
         guard ok else {
-            DispatchQueue.main.async { self.message = "Aufnahme fehlgeschlagen." }
+            DispatchQueue.main.async { self.message = L("Aufnahme fehlgeschlagen.", "Recording failed.") }
             return
         }
         let aspect = recordingAspect
@@ -567,8 +661,8 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
                 await MainActor.run { self.processing = false }
             }
             self.saveToPhotos({
-                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: file)
-            }, success: "Video in Fotos gespeichert")
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: file)?.placeholderForCreatedAsset
+            }, success: L("Video in Fotos gespeichert", "Video saved to Photos"))
         }
     }
 }
@@ -576,7 +670,7 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
 extension CameraManager: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         guard error == nil, var data = photo.fileDataRepresentation() else {
-            DispatchQueue.main.async { self.message = "Foto fehlgeschlagen." }
+            DispatchQueue.main.async { self.message = L("Foto fehlgeschlagen.", "Photo failed.") }
             return
         }
         if let aspect = photoAspect, let cropped = Self.crop(photoData: data, aspect: aspect) {
@@ -585,7 +679,8 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
         saveToPhotos({
             let request = PHAssetCreationRequest.forAsset()
             request.addResource(with: .photo, data: data, options: nil)
-        }, success: "Foto in Fotos gespeichert")
+            return request.placeholderForCreatedAsset
+        }, success: L("Foto in Fotos gespeichert", "Photo saved to Photos"))
     }
 }
 

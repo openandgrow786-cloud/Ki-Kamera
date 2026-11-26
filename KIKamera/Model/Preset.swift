@@ -17,7 +17,7 @@ enum Lens: String, Codable, CaseIterable, Identifiable {
 
     var focal: String {
         switch self {
-        case .front: return "Frontkamera"
+        case .front: return L("Frontkamera", "Front camera")
         case .ultra: return "13 mm"
         case .wide: return "24 mm"
         case .wide2x: return "48 mm"
@@ -43,7 +43,8 @@ struct Preset: Codable, Equatable {
     var exposureBias: Double    // EV, -2 bis +2
     var zoom: Double?           // nil = Standard des Objektivs
     var hdr: Bool
-    var codec: String           // "hevc" oder "h264"
+    var log: Bool               // Apple Log (für Profi-Farbkorrektur)
+    var codec: String           // "hevc", "h264" oder "prores"
     var stabilization: String   // "auto", "cinematic", "off"
     var grid: Bool
     var countdown: Int          // Sekunden vor der Aufnahme
@@ -52,7 +53,7 @@ struct Preset: Codable, Equatable {
 
     init(name: String, lens: Lens = .wide, mode: String = "video", aspect: String = "9:16", resolution: String = "4K",
          fps: Double = 30, shutter: Double = 60, iso: Double? = nil, whiteBalance: Double? = nil,
-         tint: Double = 0, exposureBias: Double = 0, zoom: Double? = nil, hdr: Bool = true,
+         tint: Double = 0, exposureBias: Double = 0, zoom: Double? = nil, hdr: Bool = true, log: Bool = false,
          codec: String = "hevc", stabilization: String = "auto", grid: Bool = true,
          countdown: Int = 0, maxDuration: Int = 0, note: String? = nil) {
         self.name = name
@@ -68,6 +69,7 @@ struct Preset: Codable, Equatable {
         self.exposureBias = exposureBias
         self.zoom = zoom
         self.hdr = hdr
+        self.log = log
         self.codec = codec
         self.stabilization = stabilization
         self.grid = grid
@@ -78,7 +80,7 @@ struct Preset: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case name, lens, mode, aspect, resolution, fps, shutter, iso, whiteBalance, tint, exposureBias, zoom
-        case hdr, codec, stabilization, grid, countdown, maxDuration, note
+        case hdr, log, codec, stabilization, grid, countdown, maxDuration, note
     }
 
     // Tolerant lesen: fehlende oder komische Felder bekommen sinnvolle Standardwerte.
@@ -98,6 +100,7 @@ struct Preset: Codable, Equatable {
         exposureBias = (try? c.decode(Double.self, forKey: .exposureBias)) ?? 0
         zoom = (try? c.decodeIfPresent(Double.self, forKey: .zoom)) ?? nil
         hdr = (try? c.decode(Bool.self, forKey: .hdr)) ?? true
+        log = (try? c.decode(Bool.self, forKey: .log)) ?? false
         codec = (try? c.decode(String.self, forKey: .codec)) ?? "hevc"
         stabilization = (try? c.decode(String.self, forKey: .stabilization)) ?? "auto"
         grid = (try? c.decode(Bool.self, forKey: .grid)) ?? true
@@ -124,7 +127,9 @@ struct Preset: Codable, Equatable {
     var fpsText: String {
         abs(fps - fps.rounded()) < 0.001 ? String(Int(fps.rounded())) : String(format: "%.2f", fps)
     }
-    var shutterText: String { "1/\(Int(shutter.rounded()))" }
+    var shutterText: String { Prefs.shutterText(shutter, fps: fps) }
+    var colorText: String { log ? "LOG" : (hdr ? "HLG HDR" : "SDR") }
+    var codecText: String { codec == "prores" ? "PRORES" : codec.uppercased() }
     var isoText: String { iso.map { String(Int($0)) } ?? "Auto" }
     var wbText: String { whiteBalance.map { "\(Int($0))K" } ?? "Auto" }
     var tintText: String { String(Int(tint.rounded())) }
@@ -139,56 +144,56 @@ struct Preset: Codable, Equatable {
     func needsReconfigure(from old: Preset?) -> Bool {
         guard let old else { return true }
         return old.lens != lens || old.mode != mode || old.resolution != resolution || abs(old.fps - fps) > 0.01
-            || old.hdr != hdr || old.codec != codec || old.stabilization != stabilization
+            || old.hdr != hdr || old.log != log || old.codec != codec || old.stabilization != stabilization
     }
 }
 
 extension Preset {
-    static let standard = Preset(name: "Standard")
+    static var standard: Preset { Preset(name: "Standard") }
 
-    static let referenzClip = Preset(name: "Dein Referenz-Clip", lens: .front, fps: 48, shutter: 96,
+    static var referenzClip: Preset { Preset(name: L("Dein Referenz-Clip", "Your reference clip"), lens: .front, fps: 48, shutter: 96,
                                      whiteBalance: 4460, tint: 9,
-                                     note: "Aus deinem Clip: Frontkamera, 48 fps, 1/96, 4460K, Tint 9.")
+                                     note: L("Aus deinem Clip: Frontkamera, 48 fps, 1/96, 4460K, Tint 9.", "From your clip: front camera, 48 fps, 1/96, 4460K, tint 9.")) }
 
-    static let kino = Preset(name: "Kino 24", aspect: "2.39", fps: 24, shutter: 48, whiteBalance: 5000, stabilization: "cinematic",
-                             note: "Klassischer Film-Look mit natürlicher Bewegungsunschärfe.")
+    static var kino: Preset { Preset(name: L("Kino 24", "Cinema 24"), aspect: "2.39", fps: 24, shutter: 48, whiteBalance: 5000, stabilization: "cinematic",
+                             note: L("Klassischer Film-Look mit natürlicher Bewegungsunschärfe.", "Classic film look with natural motion blur.")) }
 
-    static let nacht = Preset(name: "Nachtmodus", fps: 24, shutter: 30, whiteBalance: 4000, exposureBias: 0.3,
+    static var nacht: Preset { Preset(name: L("Nachtmodus", "Night mode"), fps: 24, shutter: 30, whiteBalance: 4000, exposureBias: 0.3,
                               stabilization: "cinematic",
-                              note: "Längere Belichtung und warmes Licht für dunkle Umgebungen.")
+                              note: L("Längere Belichtung und warmes Licht für dunkle Umgebungen.", "Longer exposure and warm light for dark places.")) }
 
-    static let slowMo = Preset(name: "Slow Motion", fps: 120, shutter: 240,
-                               note: "120 fps, später auf Zeitlupe verlangsamen.")
+    static var slowMo: Preset { Preset(name: "Slow Motion", fps: 120, shutter: 240,
+                               note: L("120 fps, später auf Zeitlupe verlangsamen.", "120 fps, slow it down later.")) }
 
-    static let sport = Preset(name: "Action", aspect: "16:9", fps: 60, shutter: 500, stabilization: "cinematic",
-                              note: "Kurzer Verschluss für gestochen scharfe Bewegung.")
+    static var sport: Preset { Preset(name: "Action", aspect: "16:9", fps: 60, shutter: 500, stabilization: "cinematic",
+                              note: L("Kurzer Verschluss für gestochen scharfe Bewegung.", "Fast shutter for razor-sharp motion.")) }
 
-    static let vlog = Preset(name: "Vlog Selfie", lens: .front, fps: 30, shutter: 60,
-                             note: "Frontkamera, natürliche Farben.")
+    static var vlog: Preset { Preset(name: "Vlog Selfie", lens: .front, fps: 30, shutter: 60,
+                             note: L("Frontkamera, natürliche Farben.", "Front camera, natural colors.")) }
 
-    static let produkt = Preset(name: "Produkt", lens: .wide2x, aspect: "4:5", fps: 30, shutter: 60, whiteBalance: 5600,
-                                note: "48 mm, neutrales Licht, wenig Verzerrung.")
+    static var produkt: Preset { Preset(name: L("Produkt", "Product"), lens: .wide2x, aspect: "4:5", fps: 30, shutter: 60, whiteBalance: 5600,
+                                note: L("48 mm, neutrales Licht, wenig Verzerrung.", "48 mm, neutral light, little distortion.")) }
 
-    static let warm = Preset(name: "Golden Hour", lens: .wide2x, fps: 30, shutter: 60, whiteBalance: 4200, tint: 6,
-                             note: "Warme, weiche Stimmung.")
+    static var warm: Preset { Preset(name: "Golden Hour", lens: .wide2x, fps: 30, shutter: 60, whiteBalance: 4200, tint: 6,
+                             note: L("Warme, weiche Stimmung.", "Warm, soft mood.")) }
 
-    static let portraitFoto = Preset(name: "Porträt-Foto", lens: .tele, mode: "photo", aspect: "3:4", fps: 30, shutter: 125,
-                                     note: "Tele, Fotomodus.")
+    static var portraitFoto: Preset { Preset(name: L("Porträt-Foto", "Portrait photo"), lens: .tele, mode: "photo", aspect: "3:4", fps: 30, shutter: 125,
+                                     note: L("Tele, Fotomodus.", "Tele, photo mode.")) }
 
-    static let builtIn: [Preset] = [.standard, .referenzClip, .kino, .nacht, .slowMo, .sport, .vlog, .produkt, .warm, .portraitFoto]
+    static var builtIn: [Preset] { [.standard, .referenzClip, .kino, .nacht, .slowMo, .sport, .vlog, .produkt, .warm, .portraitFoto] }
 
     /// Ohne API-Key: Text auf einen eingebauten Look abbilden.
     static func match(text: String) -> Preset {
         let t = text.lowercased()
-        if t.contains("nacht") || t.contains("night") || t.contains("dunkel") { return .nacht }
+        if t.contains("nacht") || t.contains("night") || t.contains("dunkel") || t.contains("dark") { return .nacht }
         if t.contains("slow") || t.contains("zeitlupe") { return .slowMo }
-        if t.contains("kino") || t.contains("cine") || t.contains("film") { return .kino }
+        if t.contains("kino") || t.contains("cine") || t.contains("film") || t.contains("movie") { return .kino }
         if t.contains("sport") || t.contains("action") || t.contains("schnell") { return .sport }
         if t.contains("selfie") || t.contains("vlog") || t.contains("front") { return .vlog }
-        if t.contains("produkt") || t.contains("shop") { return .produkt }
-        if t.contains("foto") || t.contains("porträt") || t.contains("portrait") { return .portraitFoto }
+        if t.contains("produkt") || t.contains("product") || t.contains("shop") { return .produkt }
+        if t.contains("foto") || t.contains("photo") || t.contains("porträt") || t.contains("portrait") { return .portraitFoto }
         if t.contains("warm") || t.contains("golden") || t.contains("weich") { return .warm }
-        if t.contains("referenz") || t.contains("mein") || t.contains("blackmagic") { return .referenzClip }
+        if t.contains("referenz") || t.contains("reference") || t.contains("mein") || t.contains("my ") || t.contains("blackmagic") { return .referenzClip }
         return .standard
     }
 }

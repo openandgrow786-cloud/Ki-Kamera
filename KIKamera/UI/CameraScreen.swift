@@ -18,9 +18,17 @@ extension View {
 }
 
 struct CameraScreen: View {
-    @StateObject private var cam = CameraManager()
+    @ObservedObject var cam: CameraManager
     @EnvironmentObject private var library: LookLibrary
     @AppStorage("recFade") private var recFade = "transparent"
+    @AppStorage("dimWhileRecording") private var dimWhileRecording = false
+    @AppStorage("timecodeMode") private var timecodeMode = "run"
+    @AppStorage("showMeters") private var showMeters = true
+    @AppStorage("showBattery") private var showBattery = true
+    @AppStorage("showStorage") private var showStorage = true
+    @AppStorage("gridOpacity") private var gridOpacity = 0.25
+    @AppStorage("frameOpacity") private var frameOpacity = 0.6
+    @AppStorage("frameColor") private var frameColor = "gold"
     @Namespace private var ns
 
     @State private var activeParam: CameraParam?
@@ -62,7 +70,7 @@ struct CameraScreen: View {
                 HStack(alignment: .bottom) {
                     messages
                     Spacer()
-                    if !cam.preset.isPhoto {
+                    if !cam.preset.isPhoto && showMeters {
                         AudioMeter(levels: cam.audioLevels, peaks: cam.audioPeaks)
                             .opacity(uiHidden ? 0.55 : 1)
                             .animation(.easeInOut(duration: 0.6), value: uiHidden)
@@ -100,7 +108,7 @@ struct CameraScreen: View {
             }
 
             if showRevealHint {
-                Text("Tippe aufs Bild, um die Knöpfe kurz zu zeigen")
+                Text(L("Tippe aufs Bild, um die Knöpfe kurz zu zeigen", "Tap the image to show the buttons briefly"))
                     .font(Theme.ui(13, .semibold))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
@@ -138,7 +146,7 @@ struct CameraScreen: View {
                     Spacer()
                     HStack(spacing: 10) {
                         ProgressView().tint(Theme.gold)
-                        Text("Format wird zugeschnitten …").font(Theme.ui(13, .semibold))
+                        Text(L("Format wird zugeschnitten …", "Cropping to format …")).font(Theme.ui(13, .semibold))
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -165,6 +173,7 @@ struct CameraScreen: View {
                 showRevealHint = false
             }
         }
+        .onChange(of: cam.shutterRequests) { _, _ in shutterPressed() }
         .sensoryFeedback(.impact(weight: .medium), trigger: cam.isRecording)
         .sensoryFeedback(.selection, trigger: cam.preset.name)
         .sensoryFeedback(.selection, trigger: cam.preset.aspect)
@@ -177,7 +186,7 @@ struct CameraScreen: View {
                 LooksSheet(current: cam.preset) { preset in applyLook(preset) }
                     .presentationDetents([.medium, .large])
             case .settings:
-                SettingsSheet()
+                SettingsSheet(cam: cam)
             }
         }
         .fullScreenCover(isPresented: $showEditor) {
@@ -196,7 +205,7 @@ struct CameraScreen: View {
         cam.apply(preset)
         scanTrigger += 1
         withAnimation(.easeOut(duration: 0.3)) { highlight = true }
-        cam.message = "Look aktiv: \(preset.name)"
+        cam.message = L("Look aktiv: ", "Look active: ") + preset.name
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             withAnimation(.easeOut(duration: 0.6)) { highlight = false }
         }
@@ -207,7 +216,7 @@ struct CameraScreen: View {
     private var viewfinder: some View {
         ZStack {
             if cam.cameraDenied {
-                Text("Kein Kamerazugriff. Erlaube ihn in den iPhone-Einstellungen unter KI Kamera.")
+                Text(L("Kein Kamerazugriff. Erlaube ihn in den iPhone-Einstellungen unter KI Kamera.", "No camera access. Allow it in iPhone Settings under KI Kamera."))
                     .font(Theme.ui(15))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Theme.muted)
@@ -215,8 +224,13 @@ struct CameraScreen: View {
             } else {
                 CameraPreview(cam: cam, version: cam.configVersion)
             }
-            if cam.preset.grid { GridOverlay() }
-            FrameMask(aspect: cam.preset.aspectValue, landscape: cam.isLandscape)
+            if cam.preset.grid { GridOverlay(opacity: gridOpacity) }
+            FrameMask(aspect: cam.preset.aspectValue, landscape: cam.isLandscape, color: frameTint, opacity: frameOpacity)
+            if cam.isRecording && dimWhileRecording && !revealed {
+                Color.black.opacity(0.72)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
             if let pt = cam.focusPoint {
                 FocusBox(point: pt).id("\(pt.x)-\(pt.y)")
             }
@@ -238,10 +252,24 @@ struct CameraScreen: View {
         String(format: "%02d:%02d:%02d:00", cam.seconds / 3600, (cam.seconds / 60) % 60, cam.seconds % 60)
     }
 
+    private func timeOfDay(_ date: Date) -> String {
+        let c = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+        return String(format: "%02d:%02d:%02d:00", c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
+    }
+
+    private var frameTint: Color {
+        switch frameColor {
+        case "white": return .white
+        case "red": return Theme.rec
+        case "cyan": return Theme.cyan
+        default: return Theme.gold
+        }
+    }
+
     private var topBar: some View {
         HStack(spacing: 12) {
             VStack(spacing: 0) {
-                Text(cam.preset.isPhoto ? "FOTO" : cam.preset.resolutionText)
+                Text(cam.preset.isPhoto ? L("FOTO", "PHOTO") : cam.preset.resolutionText)
                     .font(Theme.mono(12, .heavy))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -260,13 +288,15 @@ struct CameraScreen: View {
             .rotationEffect(iconAngle)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(timecode)
-                    .font(Theme.mono(22, .bold))
-                    .foregroundStyle(cam.isRecording ? Theme.rec : Theme.text)
-                    .shadow(color: .black.opacity(0.6), radius: 6)
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: cam.seconds)
-                Text("\(cam.preset.codec.uppercased()) · \(cam.preset.hdr ? "HLG HDR" : "SDR") · \(cam.preset.stabilization == "cinematic" ? "STAB+" : "STAB")")
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text(timecodeMode == "tod" ? timeOfDay(ctx.date) : timecode)
+                        .font(Theme.mono(22, .bold))
+                        .foregroundStyle(cam.isRecording ? Theme.rec : Theme.text)
+                        .shadow(color: .black.opacity(0.6), radius: 6)
+                        .contentTransition(.numericText())
+                        .animation(.snappy, value: cam.seconds)
+                }
+                Text("\(cam.preset.codecText) · \(cam.preset.colorText) · \(cam.preset.stabilization == "cinematic" ? "STAB+" : "STAB")")
                     .font(Theme.mono(9, .semibold))
                     .foregroundStyle(Theme.text.opacity(0.7))
             }
@@ -274,12 +304,16 @@ struct CameraScreen: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 3) {
-                HStack(spacing: 4) {
-                    Image(systemName: batteryIcon).font(.system(size: 11))
-                    Text("\(Int(cam.battery * 100))%").font(Theme.mono(10, .bold))
+                if showBattery {
+                    HStack(spacing: 4) {
+                        Image(systemName: batteryIcon).font(.system(size: 11))
+                        Text("\(Int(cam.battery * 100))%").font(Theme.mono(10, .bold))
+                    }
+                    .foregroundStyle(cam.battery < 0.2 ? Theme.rec : Theme.text)
                 }
-                .foregroundStyle(cam.battery < 0.2 ? Theme.rec : Theme.text)
-                Text(String(format: "%.0f GB", cam.freeGB)).font(Theme.mono(10, .bold)).foregroundStyle(Theme.text.opacity(0.7))
+                if showStorage {
+                    Text(String(format: "%.0f GB", cam.freeGB)).font(Theme.mono(10, .bold)).foregroundStyle(Theme.text.opacity(0.7))
+                }
             }
 
             Button { sheet = .settings } label: {
@@ -289,7 +323,7 @@ struct CameraScreen: View {
                     .frame(width: 40, height: 40)
                     .rotationEffect(iconAngle)
             }
-            .accessibilityLabel("Einstellungen")
+            .accessibilityLabel(L("Einstellungen", "Settings"))
         }
         .padding(.horizontal, 14)
         .padding(.top, 4)
@@ -427,7 +461,7 @@ struct CameraScreen: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(cam.isRecording)
-                .accessibilityLabel("Bildformat \(a)")
+                .accessibilityLabel(L("Bildformat ", "Aspect ratio ") + a)
             }
         }
         .padding(3)
@@ -456,7 +490,7 @@ struct CameraScreen: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(cam.isRecording)
-                .accessibilityLabel("Objektiv \(lens.focal)")
+                .accessibilityLabel(L("Objektiv ", "Lens ") + lens.focal)
             }
         }
         .padding(4)
@@ -475,7 +509,7 @@ struct CameraScreen: View {
                     .rotationEffect(iconAngle)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("KI fragen")
+                .accessibilityLabel(L("KI fragen", "Ask AI"))
             }
             .recFade(uiHidden, mode: recFade, dy: 12)
 
@@ -490,17 +524,17 @@ struct CameraScreen: View {
                     }
                 } label: {
                     VStack(spacing: 4) {
-                        Text(cam.preset.isPhoto ? "FOTO" : "VIDEO")
+                        Text(cam.preset.isPhoto ? L("FOTO", "PHOTO") : "VIDEO")
                             .font(Theme.mono(10, .heavy))
                             .foregroundStyle(Theme.goldGradient)
                             .rotationEffect(iconAngle)
                             .frame(width: 48, height: 48)
                             .glass(16)
-                        Text("Modus").font(Theme.mono(9, .bold)).foregroundStyle(Theme.text.opacity(0.7))
+                        Text(L("Modus", "Mode")).font(Theme.mono(9, .bold)).foregroundStyle(Theme.text.opacity(0.7))
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Video oder Foto")
+                .accessibilityLabel(L("Video oder Foto", "Video or photo"))
                 sideButton(icon: "wand.and.stars", label: "Studio") { showEditor = true }
             }
             .recFade(uiHidden, mode: recFade, dy: 12)
@@ -545,7 +579,7 @@ struct CameraScreen: View {
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: cam.isRecording)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(cam.preset.isPhoto ? "Foto aufnehmen" : (cam.isRecording ? "Aufnahme stoppen" : "Aufnahme starten"))
+        .accessibilityLabel(cam.preset.isPhoto ? L("Foto aufnehmen", "Take photo") : (cam.isRecording ? L("Aufnahme stoppen", "Stop recording") : L("Aufnahme starten", "Start recording")))
     }
 
     private func shutterPressed() {

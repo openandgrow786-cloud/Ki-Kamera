@@ -79,13 +79,13 @@ struct EditorScreen: View {
             guard let value else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if toast == value { toast = nil } }
         }
-        .alert("Stil speichern", isPresented: $showSave) {
-            TextField("Name, z. B. Mein Kino-Look", text: $saveName)
-            Button("Speichern") {
+        .alert(L("Stil speichern", "Save style"), isPresented: $showSave) {
+            TextField(L("Name, z. B. Mein Kino-Look", "Name, e.g. My cinema look"), text: $saveName)
+            Button(L("Speichern", "Save")) {
                 library.save(recipe, as: saveName)
-                toast = "Stil gespeichert"
+                toast = L("Stil gespeichert", "Style saved")
             }
-            Button("Abbrechen", role: .cancel) {}
+            Button(L("Abbrechen", "Cancel"), role: .cancel) {}
         }
     }
 
@@ -97,11 +97,11 @@ struct EditorScreen: View {
                 Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.muted)
                     .frame(width: 40, height: 40).glass(20)
             }
-            .accessibilityLabel("Schließen")
+            .accessibilityLabel(L("Schließen", "Close"))
             Spacer()
             VStack(spacing: 2) {
                 Text("KI STUDIO").font(Theme.mono(14, .heavy)).tracking(3).foregroundStyle(Theme.goldGradient)
-                Text(clipURL == nil ? "Clip wählen" : recipe.name)
+                Text(clipURL == nil ? L("Clip wählen", "Choose a clip") : recipe.name)
                     .font(Theme.ui(12)).foregroundStyle(Theme.muted)
                     .contentTransition(.opacity)
             }
@@ -129,8 +129,8 @@ struct EditorScreen: View {
                 PhotosPicker(selection: $pickerItem, matching: .videos) {
                     VStack(spacing: 18) {
                         AIOrb(size: 90, active: loading)
-                        Text("Clip auswählen").font(Theme.ui(20, .bold)).foregroundStyle(Theme.text)
-                        Text("Dann sag der KI, wie er aussehen soll: Farblook, kürzen, Zeitlupe …")
+                        Text(L("Clip auswählen", "Choose clip")).font(Theme.ui(20, .bold)).foregroundStyle(Theme.text)
+                        Text(L("Dann sag der KI, wie er aussehen soll: Farblook, kürzen, Zeitlupe …", "Then tell the AI how it should look: color grade, trim, slow motion …"))
                             .font(Theme.ui(14))
                             .foregroundStyle(Theme.muted)
                             .multilineTextAlignment(.center)
@@ -154,7 +154,7 @@ struct EditorScreen: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PromptField(placeholder: "Sag der KI, wie dein Video aussehen soll …", text: $prompt, busy: aiBusy) {
+            PromptField(placeholder: L("Sag der KI, wie dein Video aussehen soll …", "Tell the AI how your video should look …"), text: $prompt, busy: aiBusy) {
                 Task { await runAI() }
             }
             if let aiStatus {
@@ -163,7 +163,7 @@ struct EditorScreen: View {
                 Text(note).font(Theme.ui(13)).foregroundStyle(Theme.cyan)
             }
 
-            SectionLabel(text: "Stile")
+            SectionLabel(text: L("Stile", "Styles"))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(styles) { item in
@@ -173,11 +173,11 @@ struct EditorScreen: View {
                 .padding(.vertical, 4)
             }
 
-            SectionLabel(text: "Schnitt & Tempo")
+            SectionLabel(text: L("Schnitt & Tempo", "Trim & speed"))
             VStack(spacing: 14) {
                 ValueSlider(label: "Start", value: startBinding, range: 0...max(clipLength - 0.3, 0.1), step: 0.1,
                             format: { String(format: "%.1f s", $0) })
-                ValueSlider(label: "Ende", value: endBinding, range: 0.3...max(clipLength, 0.4), step: 0.1,
+                ValueSlider(label: L("Ende", "End"), value: endBinding, range: 0.3...max(clipLength, 0.4), step: 0.1,
                             format: { String(format: "%.1f s", $0) })
                 FlowLayout(spacing: 8) {
                     ForEach([0.25, 0.5, 1.0, 1.5, 2.0], id: \.self) { s in
@@ -194,7 +194,7 @@ struct EditorScreen: View {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showFine.toggle() }
             } label: {
                 HStack {
-                    SectionLabel(text: "Feinschliff")
+                    SectionLabel(text: L("Feinschliff", "Fine tuning"))
                     Spacer()
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(showFine ? 180 : 0))
@@ -205,19 +205,19 @@ struct EditorScreen: View {
 
             if showFine {
                 VStack(spacing: 14) {
-                    ValueSlider(label: "Belichtung", value: $recipe.exposure, range: -2...2, step: 0.05,
+                    ValueSlider(label: L("Belichtung", "Exposure"), value: $recipe.exposure, range: -2...2, step: 0.05,
                                 format: { String(format: "%+.2f", $0) })
-                    ValueSlider(label: "Kontrast", value: $recipe.contrast, range: 0.5...1.6, step: 0.01)
-                    ValueSlider(label: "Sättigung", value: $recipe.saturation, range: 0...2, step: 0.01)
-                    ValueSlider(label: "Wärme", value: $recipe.warmth, range: -100...100, step: 1,
+                    ValueSlider(label: L("Kontrast", "Contrast"), value: $recipe.contrast, range: 0.5...1.6, step: 0.01)
+                    ValueSlider(label: L("Sättigung", "Saturation"), value: $recipe.saturation, range: 0...2, step: 0.01)
+                    ValueSlider(label: L("Wärme", "Warmth"), value: $recipe.warmth, range: -100...100, step: 1,
                                 format: { "\(Int($0))" })
                     ValueSlider(label: "Tint", value: $recipe.tint, range: -100...100, step: 1,
                                 format: { "\(Int($0))" })
                     ValueSlider(label: "Vignette", value: $recipe.vignette, range: 0...1, step: 0.01)
-                    ValueSlider(label: "Körnung", value: $recipe.grain, range: 0...1, step: 0.01)
-                    ValueSlider(label: "Schärfe", value: $recipe.sharpen, range: 0...1, step: 0.01)
+                    ValueSlider(label: L("Körnung", "Grain"), value: $recipe.grain, range: 0...1, step: 0.01)
+                    ValueSlider(label: L("Schärfe", "Sharpness"), value: $recipe.sharpen, range: 0...1, step: 0.01)
                     ValueSlider(label: "Fade", value: $recipe.fade, range: 0...1, step: 0.01)
-                    Toggle("Schwarz-Weiß", isOn: $recipe.blackWhite)
+                    Toggle(L("Schwarz-Weiß", "Black & white"), isOn: $recipe.blackWhite)
                         .font(Theme.ui(14, .semibold))
                         .tint(Theme.gold)
                 }
@@ -230,19 +230,19 @@ struct EditorScreen: View {
                 Button {
                     saveName = recipe.name
                     showSave = true
-                } label: { Label("Stil speichern", systemImage: "bookmark") }
+                } label: { Label(L("Stil speichern", "Save style"), systemImage: "bookmark") }
                 .buttonStyle(GlassButtonStyle())
                 Button {
                     UIPasteboard.general.string = EditCode.encode(recipe)
-                    toast = "Stil-Code kopiert"
+                    toast = L("Stil-Code kopiert", "Style code copied")
                 } label: { Label("Code", systemImage: "doc.on.doc") }
                 .buttonStyle(GlassButtonStyle())
             }
             HStack(spacing: 10) {
-                Button(action: pasteCode) { Label("Code einfügen", systemImage: "doc.on.clipboard") }
+                Button(action: pasteCode) { Label(L("Code einfügen", "Paste code"), systemImage: "doc.on.clipboard") }
                     .buttonStyle(GlassButtonStyle())
                 PhotosPicker(selection: $pickerItem, matching: .videos) {
-                    Label("Anderer Clip", systemImage: "film")
+                    Label(L("Anderer Clip", "Other clip"), systemImage: "film")
                 }
                 .buttonStyle(GlassButtonStyle())
             }
@@ -288,7 +288,7 @@ struct EditorScreen: View {
         .buttonStyle(.plain)
         .contextMenu {
             if item.custom, let saved = library.styles.first(where: { $0.recipe.name == item.recipe.name }) {
-                Button(role: .destructive) { library.delete(saved) } label: { Label("Löschen", systemImage: "trash") }
+                Button(role: .destructive) { library.delete(saved) } label: { Label(L("Löschen", "Delete"), systemImage: "trash") }
             }
         }
     }
@@ -321,7 +321,7 @@ struct EditorScreen: View {
                 }
                 .frame(width: 120, height: 120)
                 .shadow(color: Theme.gold.opacity(0.4), radius: 20)
-                Text("Wird gerendert …").font(Theme.ui(15)).foregroundStyle(Theme.muted)
+                Text(L("Wird gerendert …", "Rendering …")).font(Theme.ui(15)).foregroundStyle(Theme.muted)
             }
         }
         .transition(.opacity)
@@ -336,7 +336,7 @@ struct EditorScreen: View {
             let file = try? await item.loadTransferable(type: VideoFile.self)
             guard let url = file?.url else {
                 loading = false
-                toast = "Clip konnte nicht geladen werden."
+                toast = L("Clip konnte nicht geladen werden.", "Could not load the clip.")
                 return
             }
             clipLength = await VideoEditor.duration(of: url)
@@ -381,14 +381,14 @@ struct EditorScreen: View {
             r.trimStart = recipe.trimStart
             r.trimEnd = recipe.trimEnd
             if abs(r.speed - 1) < 0.01 { r.speed = recipe.speed }
-            r.note = "Ohne API-Key: passender eingebauter Stil."
+            r.note = L("Ohne API-Key: passender eingebauter Stil.", "No API key: matching built-in style.")
             recipe = r
             return
         }
-        aiStatus = "KI schaut sich deinen Clip an …"
+        aiStatus = L("KI schaut sich deinen Clip an …", "AI is looking at your clip …")
         do {
             let info = try await ReferenceAnalyzer.load(url: url)
-            aiStatus = "KI bearbeitet …"
+            aiStatus = L("KI bearbeitet …", "AI is editing …")
             let r = try await ClaudeService.makeEdit(request: text, current: recipe, clip: info)
             recipe = r
             aiStatus = nil
@@ -401,9 +401,9 @@ struct EditorScreen: View {
     private func pasteCode() {
         if let text = UIPasteboard.general.string, let r = EditCode.decode(text) {
             recipe = r
-            toast = "Stil übernommen"
+            toast = L("Stil übernommen", "Style applied")
         } else {
-            toast = "Kein gültiger Stil-Code in der Zwischenablage"
+            toast = L("Kein gültiger Stil-Code in der Zwischenablage", "No valid style code in the clipboard")
         }
     }
 
@@ -420,7 +420,7 @@ struct EditorScreen: View {
                 }
                 PhotoSaver.saveVideo(out) { ok in
                     exporting = false
-                    toast = ok ? "In Fotos gespeichert" : "Kein Zugriff auf Fotos"
+                    toast = ok ? L("In Fotos gespeichert", "Saved to Photos") : L("Kein Zugriff auf Fotos", "No access to Photos")
                     player.play()
                 }
             } catch {

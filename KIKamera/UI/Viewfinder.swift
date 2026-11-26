@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import SwiftUI
 
 // MARK: - Live-Bild mit Tippen (Fokus) und Pinch (Zoom)
@@ -10,10 +11,18 @@ final class PreviewUIView: UIView {
     var onTap: ((CGPoint, CGPoint) -> Void)?
     var onPinch: ((UIGestureRecognizer.State, CGFloat) -> Void)?
 
+    var onHardwareShutter: (() -> Void)?
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
+        if #available(iOS 17.2, *) {
+            let interaction = AVCaptureEventInteraction { [weak self] event in
+                if event.phase == .ended { self?.onHardwareShutter?() }
+            }
+            addInteraction(interaction)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
@@ -39,6 +48,7 @@ struct CameraPreview: UIViewRepresentable {
         view.backgroundColor = .black
         let cam = self.cam
         cam.attach(previewLayer: view.previewLayer)
+        view.onHardwareShutter = { cam.hardwareShutter() }
         view.onTap = { device, point in cam.focus(at: device, viewPoint: point) }
         view.onPinch = { state, scale in
             switch state {
@@ -61,6 +71,7 @@ struct CameraPreview: UIViewRepresentable {
 // MARK: - Overlays
 
 struct GridOverlay: View {
+    var opacity: Double = 0.22
     var body: some View {
         GeometryReader { geo in
             Path { p in
@@ -71,7 +82,7 @@ struct GridOverlay: View {
                     p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: w, y: y))
                 }
             }
-            .stroke(Color.white.opacity(0.22), lineWidth: 0.6)
+            .stroke(Color.white.opacity(opacity), lineWidth: 0.6)
         }
         .allowsHitTesting(false)
     }
@@ -170,6 +181,8 @@ struct ScanSweep: View {
 struct FrameMask: View {
     let aspect: Double      // Breite / Höhe des fertigen Bildes
     let landscape: Bool     // Handy wird quer gehalten
+    var color: Color = Theme.gold
+    var opacity: Double = 0.6
 
     var body: some View {
         GeometryReader { geo in
@@ -187,7 +200,7 @@ struct FrameMask: View {
                     .frame(width: max(geo.size.width - rect.maxX, 0), height: rect.height)
                     .offset(x: rect.maxX, y: rect.minY)
                 Rectangle()
-                    .strokeBorder(Theme.gold.opacity(0.6), lineWidth: 1)
+                    .strokeBorder(color.opacity(opacity), lineWidth: 1)
                     .frame(width: rect.width, height: rect.height)
                     .offset(x: rect.minX, y: rect.minY)
             }

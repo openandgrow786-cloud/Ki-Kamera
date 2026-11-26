@@ -101,7 +101,7 @@ enum ClaudeService {
 
     Antworte NUR mit einem JSON-Objekt, ohne Text davor oder danach:
     {"name": "kurzer Name des Looks", "lens": "front|ultra|wide|wide2x|tele", "mode": "video|photo", \
-    "aspect": "9:16|16:9|1:1|4:5|3:4|2.39", \
+    "aspect": "9:16|16:9|1:1|4:5|3:4|2.39", "log": false, \
     "resolution": "4K|1080p", "fps": Zahl, "shutter": Nenner der Verschlusszeit (96 heißt 1/96), \
     "iso": null oder Zahl, "whiteBalance": null oder Kelvin, "tint": Zahl -50 bis 50, \
     "exposureBias": EV -2 bis 2, "zoom": null oder Zoomfaktor des Objektivs, "hdr": true|false, \
@@ -148,6 +148,7 @@ enum ClaudeService {
         }
         let wish = request.trimmingCharacters(in: .whitespacesAndNewlines)
         text += "Anweisung: \(wish.isEmpty ? "Genau so filmen wie im Referenzvideo." : wish)"
+        if Prefs.english { text += "\n\nWrite \"name\" and \"note\" in English." }
         let reply = try await send(system: cameraPrompt, frames: reference?.frames ?? [], text: text)
         guard let preset = PresetCode.decode(reply) else { throw ClaudeError.noPreset }
         return preset
@@ -155,7 +156,8 @@ enum ClaudeService {
 
     static func makeEdit(request: String, current: EditRecipe, clip: ReferenceInfo) async throws -> EditRecipe {
         let currentJSON = String(data: (try? JSONEncoder().encode(current)) ?? Data(), encoding: .utf8) ?? "{}"
-        let text = "Clip-Daten:\n\(clip.summary)\n\nAktuelle Bearbeitung: \(currentJSON)\n\nAnweisung: \(request)"
+        var text = "Clip-Daten:\n\(clip.summary)\n\nAktuelle Bearbeitung: \(currentJSON)\n\nAnweisung: \(request)"
+        if Prefs.english { text += "\n\nWrite \"name\" and \"note\" in English." }
         let reply = try await send(system: editPrompt, frames: clip.frames, text: text)
         guard let recipe = EditCode.decode(reply) else { throw ClaudeError.noPreset }
         return recipe

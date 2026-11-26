@@ -8,8 +8,8 @@ enum EditorError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noVideo: return "Im Clip wurde keine Videospur gefunden."
-        case .export: return "Export fehlgeschlagen."
+        case .noVideo: return L("Im Clip wurde keine Videospur gefunden.", "No video track found in the clip.")
+        case .export: return L("Export fehlgeschlagen.", "Export failed.")
         }
     }
 }

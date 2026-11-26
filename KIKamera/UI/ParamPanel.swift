@@ -8,8 +8,8 @@ enum CameraParam: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .fps: return "FPS"
-        case .shutter: return "VERSCHL."
-        case .ev: return "BELICHT."
+        case .shutter: return L("VERSCHL.", "SHUTTER")
+        case .ev: return L("BELICHT.", "EXPOS.")
         case .iso: return "ISO"
         case .wb: return "WB"
         case .tint: return "TINT"
@@ -18,11 +18,11 @@ enum CameraParam: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .fps: return "Bildrate"
-        case .shutter: return "Verschlusszeit"
-        case .ev: return "Belichtung"
+        case .fps: return L("Bildrate", "Frame rate")
+        case .shutter: return L("Verschlusszeit", "Shutter")
+        case .ev: return L("Belichtung", "Exposure")
         case .iso: return "ISO"
-        case .wb: return "Weißabgleich"
+        case .wb: return L("Weißabgleich", "White balance")
         case .tint: return "Tint"
         }
     }
@@ -60,7 +60,7 @@ struct ParamPanel: View {
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.white.opacity(0.06)))
                 }
-                .accessibilityLabel("Schließen")
+                .accessibilityLabel(L("Schließen", "Close"))
             }
             content
         }
@@ -84,24 +84,24 @@ struct ParamPanel: View {
         switch param {
         case .fps:
             chips(fpsItems)
-            hint("Verschluss passt sich automatisch an (180°-Regel).")
+            hint(L("Verschluss passt sich automatisch an (180°-Regel, flimmerfrei).", "Shutter follows automatically (180° rule, flicker-free)."))
 
         case .shutter:
             chips(shutterItems)
-            ValueSlider(label: "Fein", value: shutterBinding, range: log2(24.0)...log2(4000.0), step: 0.05,
+            ValueSlider(label: L("Fein", "Fine"), value: shutterBinding, range: log2(24.0)...log2(4000.0), step: 0.05,
                         format: { v in "1/\(Int(pow(2, v).rounded()))" })
 
         case .ev:
-            ValueSlider(label: "Helligkeit", value: evBinding, range: -2...2, step: 0.1,
+            ValueSlider(label: L("Helligkeit", "Brightness"), value: evBinding, range: -2...2, step: 0.1,
                         format: { v in v == 0 ? "±0" : String(format: "%+.1f EV", v) })
             hint("Die Blende ist beim iPhone fest (f/\(String(format: "%.2g", cam.aperture))). Hier regelst du die Helligkeit.")
 
         case .iso:
             chips(isoItems)
-            ValueSlider(label: "Manuell", value: isoBinding,
+            ValueSlider(label: L("Manuell", "Manual"), value: isoBinding,
                         range: log2(cam.isoRange.lowerBound)...log2(cam.isoRange.upperBound), step: 0.05,
                         format: { v in "\(Int(pow(2, v).rounded()))" })
-            hint("Auto hält den Verschluss fest und regelt nur ISO nach.")
+            hint(L("Auto hält den Verschluss fest und regelt nur ISO nach.", "Auto keeps the shutter fixed and only adjusts ISO."))
 
         case .wb:
             chips(wbItems)
@@ -109,7 +109,7 @@ struct ParamPanel: View {
                         format: { v in "\(Int(v))K" })
 
         case .tint:
-            ValueSlider(label: "Grün ↔ Magenta", value: tintBinding, range: -50...50, step: 1,
+            ValueSlider(label: L("Grün ↔ Magenta", "Green ↔ Magenta"), value: tintBinding, range: -50...50, step: 1,
                         format: { v in "\(Int(v))" })
             chips(tintItems)
         }
@@ -123,7 +123,7 @@ struct ParamPanel: View {
             ChipItem(label: "\(v)", selected: abs(p.fps - Double(v)) < 0.01) {
                 cam.update { preset in
                     preset.fps = Double(v)
-                    preset.shutter = Double(v * 2)
+                    preset.shutter = Prefs.flickerSafe(Double(v * 2), fps: Double(v))
                 }
             }
         }
@@ -132,7 +132,7 @@ struct ParamPanel: View {
     private var shutterItems: [ChipItem] {
         var items: [ChipItem] = [
             ChipItem(label: "180°", selected: abs(p.shutter - p.fps * 2) < 0.5) {
-                cam.update { preset in preset.shutter = preset.fps * 2 }
+                cam.update { preset in preset.shutter = Prefs.flickerSafe(preset.fps * 2, fps: preset.fps) }
             }
         ]
         let values: [Int] = [48, 50, 60, 96, 100, 120, 250, 500, 1000, 2000]
@@ -161,7 +161,7 @@ struct ParamPanel: View {
         var items: [ChipItem] = [
             ChipItem(label: "Auto", selected: p.whiteBalance == nil) { cam.update { preset in preset.whiteBalance = nil } }
         ]
-        let values: [(Int, String)] = [(3200, "Glühbirne"), (4000, "Neon"), (5600, "Sonne"), (6500, "Wolken"), (7500, "Schatten")]
+        let values: [(Int, String)] = [(3200, L("Glühbirne", "Tungsten")), (4000, "Neon"), (5600, L("Sonne", "Daylight")), (6500, L("Wolken", "Cloudy")), (7500, L("Schatten", "Shade"))]
         for (k, name) in values {
             items.append(ChipItem(label: name, selected: p.whiteBalance == Double(k)) {
                 cam.update { preset in preset.whiteBalance = Double(k) }
